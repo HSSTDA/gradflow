@@ -36,9 +36,9 @@ app.use('/api/workspaces/:workspaceId/files',    filesRouter)
 app.use('/api/workspaces/:workspaceId/meetings', meetingsRouter)
 app.use('/api/workspaces/:workspaceId/messages', messagesRouter)
 
-const PORT = env.PORT
+const PORT = process.env.PORT || 4000
 
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`GradFlow API running on port ${PORT}`)
   console.log(`Socket.io ready`)
 })
