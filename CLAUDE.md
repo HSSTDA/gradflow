@@ -78,9 +78,11 @@ Students open it and start immediately — no learning curve, no complex setup.
 - Next.js 16 (App Router) + TypeScript + React 19
 - Tailwind CSS v4
 - Zustand (state management)
-- TanStack React Query (server state — not yet wired to backend)
+- TanStack React Query (server state)
 - Lucide React (icons)
-- No backend yet — all data is inline mock data in components
+- Prisma 7 + PostgreSQL (Supabase) — API routes live in src/app/api/
+- bcryptjs + jsonwebtoken — auth
+- @prisma/adapter-pg + pg — database driver
 
 ## Design System (strictly enforced)
 Fonts: DM Serif Display (headings) + Geist (body)
@@ -134,10 +136,15 @@ Convert all inline mock data to shared stores:
 - useFilesStore — files, folders, addFile
 - useImportantStore — pinnedItems, addItem, togglePin
 
-## Next Phase — Backend
-backend/ directory (not yet created)
-Node.js + Express + PostgreSQL + Prisma + Socket.io
-Will be documented in backend/CLAUDE.md when started
+## Backend — Next.js API Routes ✅
+API routes live in src/app/api/ (no separate backend server).
+- Auth: src/app/api/auth/{signup,login,me}/route.ts
+- Workspaces: src/app/api/workspaces/route.ts
+- Tasks/Files/Meetings/Messages: src/app/api/workspaces/[workspaceId]/*/route.ts
+- DB client: src/lib/prisma.ts (PrismaClient with @prisma/adapter-pg)
+- Auth helpers: src/lib/auth.ts (signToken, verifyToken)
+- API client: src/lib/api.ts (BASE_URL = '' — same-origin calls)
+- Schema: prisma/schema.prisma | CLI config: prisma.config.ts
 
 ## File Structure
 src/
@@ -166,7 +173,16 @@ src/
 │   └── ui/
 │       ├── PreviewModal.tsx
 │       └── Toast.tsx
+├── app/
+│   └── api/
+│       ├── auth/{signup,login,me}/route.ts
+│       └── workspaces/
+│           ├── route.ts
+│           └── [workspaceId]/{tasks,files,meetings,messages}/route.ts
 ├── lib/
+│   ├── prisma.ts     ← PrismaClient singleton (adapter-pg)
+│   ├── auth.ts       ← signToken / verifyToken
+│   └── api.ts        ← typed fetch client
 ├── store/
 │   └── meetingsStore.ts  ← useMeetingsStore
 └── types/
@@ -192,5 +208,5 @@ NS: Nora Salem — Developer — #D97706
 ## How to delegate
 When given a task:
 - If it touches UI, components, or pages → follow src/CLAUDE.md
-- If it touches API, database, or server → follow backend/CLAUDE.md (not built yet)
+- If it touches API routes or database → work in src/app/api/ and src/lib/
 - If it touches both → split the work clearly
