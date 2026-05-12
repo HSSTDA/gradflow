@@ -23,7 +23,7 @@ export async function GET(req: NextRequest, { params }: { params: { workspaceId:
       include: {
         attendees: { include: { user: { select: { id: true, name: true, avatarUrl: true } } } },
         notes: true,
-        actionItems: { include: { assignee: { select: { id: true, name: true, avatarUrl: true } } } }
+        actions: { include: { assignee: { select: { id: true, name: true, avatarUrl: true } } } }
       },
       orderBy: { date: 'desc' }
     })
@@ -49,16 +49,15 @@ export async function POST(req: NextRequest, { params }: { params: { workspaceId
         date: new Date(date),
         duration: duration || 60,
         type: type || 'TEAM_SYNC',
-        location: location || 'Online',
         workspaceId,
         attendees: { create: (attendeeIds || [userId]).map((uid: string) => ({ userId: uid })) },
-        notes: { create: (notes || []).map((content: string) => ({ content })) },
-        actionItems: { create: (actionItems || []).map((a: any) => ({ text: a.text, assigneeId: a.assigneeId || null })) }
+        notes: { create: (notes || []).map((text: string) => ({ text })) },
+        actions: { create: (actionItems || []).map((a: any) => ({ text: a.text, assigneeId: a.assigneeId || null })) }
       },
       include: {
         attendees: { include: { user: { select: { id: true, name: true, avatarUrl: true } } } },
         notes: true,
-        actionItems: { include: { assignee: { select: { id: true, name: true, avatarUrl: true } } } }
+        actions: { include: { assignee: { select: { id: true, name: true, avatarUrl: true } } } }
       }
     })
 

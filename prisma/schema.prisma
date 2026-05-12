@@ -171,8 +171,8 @@ model Meeting {
   id          String      @id @default(cuid())
   workspaceId String
   title       String
-  date        String
-  time        String
+  date        DateTime
+  time        String?
   type        MeetingType
   duration    Int
   createdAt   DateTime    @default(now())
