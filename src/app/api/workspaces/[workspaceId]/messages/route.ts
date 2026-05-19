@@ -8,10 +8,10 @@ const getUser = (req: NextRequest) => {
   return verifyToken(token)
 }
 
-export async function GET(req: NextRequest, { params }: { params: { workspaceId: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ workspaceId: string }> }) {
   try {
     const { userId } = getUser(req)
-    const { workspaceId } = params
+    const { workspaceId } = await params
 
     const member = await prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId, userId } }
@@ -26,15 +26,16 @@ export async function GET(req: NextRequest, { params }: { params: { workspaceId:
     })
 
     return NextResponse.json({ success: true, data: { messages } })
-  } catch {
+  } catch (err) {
+    console.error(err)
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: { workspaceId: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ workspaceId: string }> }) {
   try {
     const { userId } = getUser(req)
-    const { workspaceId } = params
+    const { workspaceId } = await params
     const { text, receiverId } = await req.json()
 
     if (!text?.trim())
@@ -46,7 +47,8 @@ export async function POST(req: NextRequest, { params }: { params: { workspaceId
     })
 
     return NextResponse.json({ success: true, data: { message } }, { status: 201 })
-  } catch {
+  } catch (err) {
+    console.error(err)
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 }

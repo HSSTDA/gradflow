@@ -8,10 +8,10 @@ const getUser = (req: NextRequest) => {
   return verifyToken(token)
 }
 
-export async function GET(req: NextRequest, { params }: { params: { workspaceId: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ workspaceId: string }> }) {
   try {
     const { userId } = getUser(req)
-    const { workspaceId } = params
+    const { workspaceId } = await params
     const folder = req.nextUrl.searchParams.get('folder')
 
     const member = await prisma.workspaceMember.findUnique({
@@ -21,20 +21,21 @@ export async function GET(req: NextRequest, { params }: { params: { workspaceId:
 
     const files = await prisma.file.findMany({
       where: { workspaceId, ...(folder && folder !== 'All Files' && { folder }) },
-      include: { uploadedBy: { select: { id: true, name: true, avatarUrl: true } } },
+      include: { uploader: { select: { id: true, name: true, avatarUrl: true } } },
       orderBy: { createdAt: 'desc' }
     })
 
     return NextResponse.json({ success: true, data: { files } })
-  } catch {
+  } catch (err) {
+    console.error(err)
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: { workspaceId: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ workspaceId: string }> }) {
   try {
     const { userId } = getUser(req)
-    const { workspaceId } = params
+    const { workspaceId } = await params
     const { name, type, folder, size, url } = await req.json()
 
     if (!name || !type || !folder || !url)
@@ -42,11 +43,12 @@ export async function POST(req: NextRequest, { params }: { params: { workspaceId
 
     const file = await prisma.file.create({
       data: { name, type, folder, size: size || 'Unknown', url, workspaceId, uploadedById: userId },
-      include: { uploadedBy: { select: { id: true, name: true, avatarUrl: true } } }
+      include: { uploader: { select: { id: true, name: true, avatarUrl: true } } }
     })
 
     return NextResponse.json({ success: true, data: { file } }, { status: 201 })
-  } catch {
+  } catch (err) {
+    console.error(err)
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 }

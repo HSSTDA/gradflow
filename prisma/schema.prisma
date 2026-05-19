@@ -58,16 +58,18 @@ model User {
   avatarUrl    String?
   createdAt    DateTime @default(now())
 
-  ownedWorkspaces  Workspace[]       @relation("WorkspaceOwner")
-  memberships      WorkspaceMember[]
-  createdTasks     Task[]            @relation("TaskCreator")
-  assignedSubtasks SubTask[]         @relation("SubtaskAssignee")
-  uploadedFiles    File[]            @relation("FileUploader")
-  sentMessages     Message[]         @relation("MessageSender")
-  receivedMessages Message[]         @relation("MessageReceiver")
-  pinnedItems      PinnedItem[]      @relation("PinnedItemAuthor")
-  actionItems      ActionItem[]      @relation("ActionItemAssignee")
-  meetingAttendees MeetingAttendee[]
+  ownedWorkspaces        Workspace[]       @relation("WorkspaceOwner")
+  memberships            WorkspaceMember[]
+  createdTasks           Task[]            @relation("TaskCreator")
+  assignedSubtasks       SubTask[]         @relation("SubtaskAssignee")
+  uploadedFiles          File[]            @relation("FileUploader")
+  sentMessages           Message[]         @relation("MessageSender")
+  receivedMessages       Message[]         @relation("MessageReceiver")
+  pinnedItems            PinnedItem[]      @relation("PinnedItemAuthor")
+  actionItems            ActionItem[]      @relation("ActionItemAssignee")
+  meetingAttendees       MeetingAttendee[]
+  notifications          Notification[]    @relation("NotificationReceiver")
+  triggeredNotifications Notification[]    @relation("TriggeredNotifications")
 
   @@map("users")
 }
@@ -82,14 +84,15 @@ model Workspace {
   ownerId     String
   createdAt   DateTime @default(now())
 
-  owner       User              @relation("WorkspaceOwner", fields: [ownerId], references: [id])
-  members     WorkspaceMember[]
-  tasks       Task[]
-  files       File[]
-  meetings    Meeting[]
-  messages    Message[]
-  pinnedItems PinnedItem[]
-  milestones  Milestone[]
+  owner         User              @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  members       WorkspaceMember[]
+  tasks         Task[]
+  files         File[]
+  meetings      Meeting[]
+  messages      Message[]
+  pinnedItems   PinnedItem[]
+  milestones    Milestone[]
+  notifications Notification[]
 
   @@map("workspaces")
 }
@@ -254,6 +257,28 @@ model PinnedItem {
   addedBy   User      @relation("PinnedItemAuthor", fields: [addedById], references: [id])
 
   @@map("pinned_items")
+}
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+model Notification {
+  id          String   @id @default(cuid())
+  type        String
+  title       String
+  body        String
+  read        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  userId      String
+  user        User      @relation("NotificationReceiver", fields: [userId], references: [id], onDelete: Cascade)
+
+  triggeredById String?
+  triggeredBy   User?   @relation("TriggeredNotifications", fields: [triggeredById], references: [id])
+
+  @@map("notifications")
 }
 
 // ─── Timeline ─────────────────────────────────────────────────────────────────

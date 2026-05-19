@@ -8,10 +8,10 @@ const getUser = (req: NextRequest) => {
   return verifyToken(token)
 }
 
-export async function GET(req: NextRequest, { params }: { params: { workspaceId: string } }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ workspaceId: string }> }) {
   try {
     const { userId } = getUser(req)
-    const { workspaceId } = params
+    const { workspaceId } = await params
 
     const member = await prisma.workspaceMember.findUnique({
       where: { workspaceId_userId: { workspaceId, userId } }
@@ -29,31 +29,58 @@ export async function GET(req: NextRequest, { params }: { params: { workspaceId:
     })
 
     return NextResponse.json({ success: true, data: { meetings } })
-  } catch {
+  } catch (err) {
+    console.error(err)
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: { workspaceId: string } }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ workspaceId: string }> }) {
   try {
     const { userId } = getUser(req)
-    const { workspaceId } = params
-    const { title, date, duration, type, location, attendeeIds, notes, actionItems } = await req.json()
+    const { workspaceId } = await params
+    const { title, date, duration, type, attendeeIds, notes, actionItems } = await req.json()
 
     if (!title || !date)
       return NextResponse.json({ success: false, error: 'Title and date required' }, { status: 400 })
 
-    const meeting = await prisma.meeting.create({
+    // Step 1: Create meeting without attendees
+    // (adapter-pg fails on nested creates for models with @@id composite PK)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const created = await prisma.meeting.create({
       data: {
         title: title.trim(),
         date: new Date(date),
-        duration: duration || 60,
-        type: type || 'TEAM_SYNC',
+        duration: parseInt(duration) || 60,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        type: ((type || 'TEAM_SYNC') as any),
         workspaceId,
-        attendees: { create: (attendeeIds || [userId]).map((uid: string) => ({ userId: uid })) },
-        notes: { create: (notes || []).map((text: string) => ({ text })) },
-        actions: { create: (actionItems || []).map((a: any) => ({ text: a.text, assigneeId: a.assigneeId || null })) }
+        notes: {
+          create: (notes || [])
+            .filter((n: string) => n?.trim())
+            .map((text: string) => ({ text: text.trim() }))
+        },
+        actions: {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          create: (actionItems || [])
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .filter((a: any) => a?.text?.trim())
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .map((a: any) => ({ text: a.text.trim(), assigneeId: a.assigneeId || null }))
+        },
       },
+    })
+
+    // Step 2: Create attendees separately
+    const ids = (attendeeIds?.length ? attendeeIds : [userId]) as string[]
+    await prisma.meetingAttendee.createMany({
+      data: ids.map((uid: string) => ({ meetingId: created.id, userId: uid })),
+      skipDuplicates: true,
+    })
+
+    // Step 3: Fetch complete meeting with all relations
+    const meeting = await prisma.meeting.findUnique({
+      where: { id: created.id },
       include: {
         attendees: { include: { user: { select: { id: true, name: true, avatarUrl: true } } } },
         notes: true,
@@ -62,7 +89,8 @@ export async function POST(req: NextRequest, { params }: { params: { workspaceId
     })
 
     return NextResponse.json({ success: true, data: { meeting } }, { status: 201 })
-  } catch {
+  } catch (err) {
+    console.error(err)
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 }

@@ -25,7 +25,9 @@ interface AuthStore {
   workspaces: Workspace[]
   isLoading: boolean
   error: string | null
+  hasHydrated: boolean
 
+  setHasHydrated: (value: boolean) => void
   login: (email: string, password: string) => Promise<boolean>
   signup: (name: string, email: string, password: string) => Promise<boolean>
   logout: () => void
@@ -43,6 +45,9 @@ export const useAuthStore = create<AuthStore>()(
       workspaces: [],
       isLoading: false,
       error: null,
+      hasHydrated: false,
+
+      setHasHydrated: (value) => set({ hasHydrated: value }),
 
       login: async (email, password) => {
         set({ isLoading: true, error: null })
@@ -102,6 +107,9 @@ export const useAuthStore = create<AuthStore>()(
         token: state.token,
         currentWorkspace: state.currentWorkspace,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true)
+      },
     }
   )
 )

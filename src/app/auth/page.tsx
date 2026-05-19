@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
 
 type Mode = 'login' | 'signup'
@@ -9,20 +10,25 @@ export default function AuthPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const { login, signup, isLoading, error, clearError, user } = useAuthStore()
+  const router = useRouter()
+  const { login, signup, isLoading, error, clearError, user, currentWorkspace } = useAuthStore()
 
   useEffect(() => {
-    if (user) window.location.href = '/'
-  }, [user])
+    if (user) {
+      router.replace('/')
+    }
+  }, [user, router])
+
+  if (user) return null
 
   const handleSubmit = async () => {
     clearError()
     if (mode === 'login') {
       const ok = await login(email, password)
-      if (ok) window.location.href = '/'
+      if (ok) router.push('/')
     } else {
       const ok = await signup(name, email, password)
-      if (ok) window.location.href = '/workspace/new'
+      if (ok) router.push('/workspace/new')
     }
   }
 

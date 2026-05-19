@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useFilesStore, type FileItem } from '@/store/filesStore';
+import { useAuthStore } from '@/store/authStore';
+import { getSupabase } from '@/lib/supabase';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ViewMode = 'list' | 'grid';
@@ -86,36 +88,14 @@ function PreviewModal({
 
         {/* Body */}
         <div style={{ flex: 1, overflow: 'hidden', background: 'var(--bg)' }}>
-          {file.type === 'pdf' ? (
-            <iframe
-              src="https://mozilla.github.io/pdf.js/web/viewer.html"
-              style={{ width: '100%', height: '100%', border: 'none' }}
-            />
-          ) : (
-            <div style={{
-              height: '100%', display: 'flex', flexDirection: 'column',
-              alignItems: 'center', justifyContent: 'center',
-              gap: 12, padding: 24, textAlign: 'center',
-            }}>
-              <span style={{ fontSize: 48 }}>{icon.emoji}</span>
-              <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                {file.name}
-              </h3>
-              <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>
-                Preview will render here via Google Docs Viewer
-              </p>
-              <code style={{
-                display: 'block',
-                background: 'var(--surface)', border: '1px solid var(--border)',
-                borderRadius: 6, padding: '10px 14px',
-                fontSize: 11, fontFamily: 'monospace',
-                color: 'var(--text-muted)', maxWidth: 460,
-                wordBreak: 'break-all', marginTop: 4,
-              }}>
-                {'https://docs.google.com/gviewer?url={fileUrl}&embedded=true'}
-              </code>
-            </div>
-          )}
+          <iframe
+            src={
+              file.type === 'pdf'
+                ? file.url
+                : `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(file.url)}`
+            }
+            style={{ width: '100%', height: '100%', border: 'none' }}
+          />
         </div>
 
         {/* Footer */}
@@ -125,7 +105,7 @@ function PreviewModal({
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            {file.size} · {file.folder} · Added by {file.uploadedBy.name}
+            {file.size} · {file.folder} · Added by {file.uploadedBy?.name}
           </span>
           <div style={{ display: 'flex', gap: 6 }}>
             <button
@@ -183,14 +163,104 @@ function FolderBtn({
 
 // ─── FilesPage ────────────────────────────────────────────────────────────────
 export default function FilesPage() {
-  const { files } = useFilesStore();
-  const [activeFolder,  setActiveFolder]  = useState('All Files');
-  const [viewMode,      setViewMode]      = useState<ViewMode>('list');
-  const [searchQuery,   setSearchQuery]   = useState('');
-  const [previewIndex,  setPreviewIndex]  = useState(-1);
-  const [hoveredFileId, setHoveredFileId] = useState<string | null>(null);
+  // Requires Supabase Storage bucket "gradflow-files" to allow authenticated uploads
+  // Dashboard → Storage → gradflow-files → Policies → New Policy → Allow insert for authenticated users
+  const { files, fetchFiles, deleteFile } = useFilesStore();
+  const workspaceId = useAuthStore(s => s.currentWorkspace?.id);
+  const token       = useAuthStore(s => s.token);
+  const [activeFolder,   setActiveFolder]   = useState('All Files');
+  const [viewMode,       setViewMode]       = useState<ViewMode>('list');
+  const [searchQuery,    setSearchQuery]    = useState('');
+  const [previewIndex,   setPreviewIndex]   = useState(-1);
+  const [hoveredFileId,  setHoveredFileId]  = useState<string | null>(null);
+  const [uploading,      setUploading]      = useState(false);
+  const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
+  const [showNewFolder,  setShowNewFolder]  = useState(false);
+  const [newFolderName,  setNewFolderName]  = useState('');
+  const [customFolders,  setCustomFolders]  = useState<string[]>([]);
+  const [folderError,    setFolderError]    = useState('');
+  const fileInputRef      = useRef<HTMLInputElement>(null);
+  const folderInputRef    = useRef<HTMLInputElement>(null);
 
-  const folders = ['All Files', ...Array.from(new Set(files.map(f => f.folder)))];
+  const handleUpload = async (file: File) => {
+    if (!workspaceId || !token) return;
+    setUploading(true);
+    try {
+      const fileExt  = file.name.split('.').pop();
+      const filePath = `${workspaceId}/${Date.now()}_${file.name}`;
+
+      const { data, error } = await getSupabase().storage
+        .from('gradflow-files')
+        .upload(filePath, file, { contentType: file.type, upsert: false });
+
+      if (error) throw error;
+
+      const { data: urlData } = getSupabase().storage
+        .from('gradflow-files')
+        .getPublicUrl(filePath);
+
+      const url    = urlData.publicUrl;
+
+      const type   = fileExt === 'pdf' ? 'pdf' : fileExt === 'docx' ? 'docx' : fileExt === 'pptx' ? 'pptx' : 'pdf';
+      const folder = activeFolder && activeFolder !== 'All Files' && activeFolder !== 'recent'
+        ? activeFolder
+        : (type === 'pptx' ? 'Design' : 'Documents');
+      const size   = file.size > 1024 * 1024
+        ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
+        : `${(file.size / 1024).toFixed(0)} KB`;
+
+      // Try to save to DB with timeout — show file optimistically if it fails
+      try {
+        const res = await Promise.race([
+          fetch(`/api/workspaces/${workspaceId}/files`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ name: file.name, type, folder, size, url }),
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('timeout')), 8000)
+          ),
+        ]) as Response;
+        await res.json();
+      } catch (dbErr) {
+        useFilesStore.setState(s => ({
+          files: [...s.files, {
+            id: Date.now().toString(),
+            name: file.name,
+            type,
+            folder,
+            size,
+            url,
+            createdAt: new Date().toISOString(),
+            uploadedBy: { id: '', name: 'You', avatarUrl: undefined },
+          }],
+        }));
+      }
+
+      await fetchFiles(workspaceId).catch(() => {});
+    } catch (err: any) {
+      console.error(err);
+      alert(`Upload failed: ${err?.message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const allFolders = ['All Files', ...new Set([...customFolders, ...files.map(f => f.folder)])];
+
+  const handleCreateFolder = () => {
+    const name = newFolderName.trim();
+    if (!name) return;
+    if (allFolders.includes(name)) {
+      setFolderError('Folder already exists');
+      return;
+    }
+    setCustomFolders(prev => [...prev, name]);
+    setActiveFolder(name);
+    setNewFolderName('');
+    setShowNewFolder(false);
+    setFolderError('');
+  };
 
   const filteredFiles = files.filter(file => {
     const matchesFolder =
@@ -212,6 +282,15 @@ export default function FilesPage() {
   const openPreview = (file: FileItem) => {
     const idx = filteredFiles.findIndex(f => f.id === file.id);
     if (idx >= 0) setPreviewIndex(idx);
+  };
+
+  const handleDelete = async (e: React.MouseEvent, file: FileItem) => {
+    e.stopPropagation();
+    if (!workspaceId) return;
+    if (!window.confirm(`Delete "${file.name}"?`)) return;
+    setDeletingFileId(file.id);
+    await deleteFile(workspaceId, file.id);
+    setDeletingFileId(null);
   };
 
   return (
@@ -237,24 +316,77 @@ export default function FilesPage() {
             }}>
               Folders
             </span>
-            <button style={{
-              fontSize: 11, color: 'var(--accent)',
-              background: 'none', border: 'none', cursor: 'pointer',
-              padding: 0, fontFamily: 'var(--font-body)',
-            }}>
-              + New Folder
-            </button>
+            {!showNewFolder && (
+              <button
+                onClick={() => { setShowNewFolder(true); setFolderError(''); setTimeout(() => folderInputRef.current?.focus(), 0); }}
+                style={{
+                  fontSize: 11, color: 'var(--accent)',
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  padding: 0, fontFamily: 'var(--font-body)',
+                }}
+              >
+                + New Folder
+              </button>
+            )}
           </div>
 
+          {/* Inline new-folder prompt */}
+          {showNewFolder && (
+            <div style={{ padding: '0 10px 10px' }}>
+              <input
+                ref={folderInputRef}
+                value={newFolderName}
+                onChange={e => { setNewFolderName(e.target.value); setFolderError(''); }}
+                onKeyDown={e => { if (e.key === 'Enter') handleCreateFolder(); if (e.key === 'Escape') { setShowNewFolder(false); setNewFolderName(''); setFolderError(''); } }}
+                placeholder="Folder name…"
+                style={{
+                  width: '100%', boxSizing: 'border-box',
+                  background: 'var(--bg)', border: `1px solid ${folderError ? 'var(--red)' : 'var(--accent)'}`,
+                  borderRadius: 'var(--radius-sm)', padding: '6px 10px',
+                  fontSize: 12, color: 'var(--text-primary)', outline: 'none',
+                  fontFamily: 'var(--font-body)', marginBottom: 6,
+                }}
+              />
+              {folderError && (
+                <div style={{ fontSize: 11, color: 'var(--red)', marginBottom: 6 }}>
+                  {folderError}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  onClick={handleCreateFolder}
+                  style={{
+                    flex: 1, padding: '5px 0', fontSize: 11, fontWeight: 600,
+                    background: 'var(--accent)', color: 'white', border: 'none',
+                    borderRadius: 6, cursor: 'pointer', fontFamily: 'var(--font-body)',
+                  }}
+                >
+                  Create
+                </button>
+                <button
+                  onClick={() => { setShowNewFolder(false); setNewFolderName(''); setFolderError(''); }}
+                  style={{
+                    flex: 1, padding: '5px 0', fontSize: 11, fontWeight: 500,
+                    background: 'transparent', color: 'var(--text-secondary)',
+                    border: '1px solid var(--border)', borderRadius: 6,
+                    cursor: 'pointer', fontFamily: 'var(--font-body)',
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Main folders */}
-          {folders.map(name => (
+          {allFolders.map(name => (
             <FolderBtn
               key={name}
               icon="📁"
               label={name}
               count={name === 'All Files' ? files.length : files.filter(f => f.folder === name).length}
               active={activeFolder === name}
-              onClick={() => setActiveFolder(name)}
+              onClick={() => { setActiveFolder(name); setShowNewFolder(false); }}
             />
           ))}
 
@@ -339,29 +471,39 @@ export default function FilesPage() {
               </div>
 
               {/* Upload */}
-              <button
-                style={{
-                  background: 'var(--accent)', color: 'white', border: 'none',
+              <label style={{ cursor: uploading ? 'not-allowed' : 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.docx,.pptx"
+                  style={{ display: 'none' }}
+                  onChange={e => e.target.files?.[0] && handleUpload(e.target.files[0])}
+                  disabled={uploading}
+                />
+                <span style={{
+                  display: 'inline-block', whiteSpace: 'nowrap',
+                  background: uploading ? 'var(--accent-light)' : 'var(--accent)',
+                  color: uploading ? 'var(--accent)' : 'white',
                   borderRadius: 'var(--radius-sm)', padding: '7px 14px',
-                  fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  fontSize: 13, fontWeight: 600,
+                  cursor: uploading ? 'not-allowed' : 'pointer',
                   fontFamily: 'var(--font-body)', transition: 'opacity var(--transition)',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.opacity = '0.88'; }}
-                onMouseLeave={e => { e.currentTarget.style.opacity = '1'; }}
-              >
-                ↑ Upload
-              </button>
+                  userSelect: 'none',
+                }}>
+                  {uploading ? 'Uploading…' : '↑ Upload'}
+                </span>
+              </label>
             </div>
           </div>
 
           {/* List table header */}
           {viewMode === 'list' && (
             <div style={{
-              display: 'grid', gridTemplateColumns: '1fr 120px 80px 100px 80px',
+              display: 'grid', gridTemplateColumns: '1fr 100px 80px 140px',
               padding: '8px 24px', flexShrink: 0,
               background: 'var(--bg)', borderBottom: '1px solid var(--border)',
             }}>
-              {['Name', 'Folder', 'Size', 'Modified', 'Actions'].map(col => (
+              {['Name', 'Folder', 'Size', 'Actions'].map(col => (
                 <span key={col} style={{
                   fontSize: 11, textTransform: 'uppercase',
                   letterSpacing: '0.7px', color: 'var(--text-muted)', fontWeight: 700,
@@ -386,7 +528,7 @@ export default function FilesPage() {
                   onMouseEnter={() => setHoveredFileId(file.id)}
                   onMouseLeave={() => setHoveredFileId(null)}
                   style={{
-                    display: 'grid', gridTemplateColumns: '1fr 120px 80px 100px 80px',
+                    display: 'grid', gridTemplateColumns: '1fr 100px 80px 140px',
                     alignItems: 'center', padding: '11px 24px',
                     borderBottom: '1px solid var(--border)', cursor: 'pointer',
                     background: hovered ? 'var(--bg)' : 'var(--surface)',
@@ -411,38 +553,41 @@ export default function FilesPage() {
                         {file.name}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
-                        Uploaded by {file.uploadedBy.name}
+                        Uploaded by {file.uploadedBy?.name}
                       </div>
                     </div>
                   </div>
 
                   <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{file.folder}</span>
                   <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{file.size}</span>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{file.date}</span>
 
                   {/* Actions */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <button
-                      onClick={e => e.stopPropagation()}
+                      onClick={e => { e.stopPropagation(); openPreview(file); }}
                       style={{
-                        fontSize: 11, color: 'var(--text-muted)',
+                        fontSize: 12, color: 'var(--text-secondary)',
                         border: '1px solid var(--border)', padding: '4px 8px',
-                        borderRadius: 6, background: 'transparent', cursor: 'pointer',
+                        borderRadius: 6, background: 'var(--surface)', cursor: 'pointer',
                         fontFamily: 'var(--font-body)', whiteSpace: 'nowrap',
-                        opacity: hovered ? 1 : 0,
-                        transition: 'opacity var(--transition)',
                       }}
                     >
                       👁 Preview
                     </button>
                     <button
-                      onClick={e => e.stopPropagation()}
+                      onClick={e => handleDelete(e, file)}
+                      disabled={deletingFileId === file.id}
                       style={{
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        fontSize: 15, color: 'var(--text-muted)', padding: '4px 5px', lineHeight: 1,
+                        fontSize: 12, padding: '4px 8px', lineHeight: 1,
+                        border: '1px solid var(--red-light)', borderRadius: 6,
+                        background: 'var(--surface)', cursor: deletingFileId === file.id ? 'not-allowed' : 'pointer',
+                        color: 'var(--red)', opacity: deletingFileId === file.id ? 0.4 : 1,
+                        transition: 'background var(--transition)',
                       }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'var(--red-light)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'var(--surface)'; }}
                     >
-                      ↓
+                      🗑
                     </button>
                   </div>
                 </div>
@@ -457,7 +602,7 @@ export default function FilesPage() {
               }}>
                 {filteredFiles.map(file => {
                   const icon = FILE_ICON[file.type] ?? { bg: '#F3F4F6', emoji: '📎' };
-                  const uploaderInitials = file.uploadedBy.name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
+                  const uploaderInitials = (file.uploadedBy?.name ?? '').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
                   return (
                     <div
                       key={file.id}
@@ -465,18 +610,39 @@ export default function FilesPage() {
                       style={{
                         background: 'var(--surface)', border: '1px solid var(--border)',
                         borderRadius: 'var(--radius-md)', padding: 16,
-                        cursor: 'pointer',
+                        cursor: 'pointer', position: 'relative',
                         transition: 'box-shadow var(--transition), transform var(--transition)',
                       }}
                       onMouseEnter={e => {
                         e.currentTarget.style.boxShadow = 'var(--shadow-md)';
                         e.currentTarget.style.transform = 'translateY(-1px)';
+                        const btn = e.currentTarget.querySelector<HTMLButtonElement>('.grid-delete-btn');
+                        if (btn) btn.style.opacity = '1';
                       }}
                       onMouseLeave={e => {
                         e.currentTarget.style.boxShadow = '';
                         e.currentTarget.style.transform = '';
+                        const btn = e.currentTarget.querySelector<HTMLButtonElement>('.grid-delete-btn');
+                        if (btn) btn.style.opacity = '0';
                       }}
                     >
+                      <button
+                        className="grid-delete-btn"
+                        onClick={e => handleDelete(e, file)}
+                        disabled={deletingFileId === file.id}
+                        style={{
+                          position: 'absolute', top: 8, right: 8,
+                          background: 'rgba(255,255,255,0.9)', borderRadius: 6,
+                          padding: '4px 6px', fontSize: 14, cursor: 'pointer',
+                          border: '1px solid var(--border)', lineHeight: 1,
+                          opacity: 0, transition: 'opacity var(--transition), color var(--transition)',
+                          color: 'var(--text-muted)',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.color = 'var(--red)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; }}
+                      >
+                        🗑
+                      </button>
                       {/* Icon */}
                       <div style={{
                         width: 48, height: 48, borderRadius: 10,

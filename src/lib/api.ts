@@ -46,6 +46,10 @@ export const api = {
     get: (id: string) => apiFetch(`/api/workspaces/${id}`),
     invite: (id: string, body: { email: string; role?: string }) =>
       apiFetch(`/api/workspaces/${id}/invite`, { method: 'POST', body: JSON.stringify(body) }),
+    members: (workspaceId: string) =>
+      apiFetch(`/api/workspaces/${workspaceId}/members`),
+    removeMember: (workspaceId: string, userId: string) =>
+      apiFetch(`/api/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
   },
 
   tasks: {
@@ -61,6 +65,8 @@ export const api = {
       apiFetch(`/api/workspaces/${workspaceId}/tasks/${taskId}/subtasks`, { method: 'POST', body: JSON.stringify(body) }),
     updateSubtask: (workspaceId: string, taskId: string, subtaskId: string, body: object) =>
       apiFetch(`/api/workspaces/${workspaceId}/tasks/${taskId}/subtasks/${subtaskId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    deleteSubtask: (workspaceId: string, taskId: string, subtaskId: string) =>
+      apiFetch(`/api/workspaces/${workspaceId}/tasks/${taskId}/subtasks/${subtaskId}`, { method: 'DELETE' }),
   },
 
   files: {
@@ -72,15 +78,50 @@ export const api = {
       apiFetch(`/api/workspaces/${workspaceId}/files/${fileId}`, { method: 'DELETE' }),
   },
 
+  pinned: {
+    list: (workspaceId: string) =>
+      apiFetch(`/api/workspaces/${workspaceId}/pinned`),
+    create: (workspaceId: string, body: object) =>
+      apiFetch(`/api/workspaces/${workspaceId}/pinned`, { method: 'POST', body: JSON.stringify(body) }),
+    delete: (workspaceId: string, itemId: string) =>
+      apiFetch(`/api/workspaces/${workspaceId}/pinned/${itemId}`, { method: 'DELETE' }),
+    update: (workspaceId: string, itemId: string, body: object) =>
+      apiFetch(`/api/workspaces/${workspaceId}/pinned/${itemId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  },
+
   meetings: {
     list: (workspaceId: string) =>
       apiFetch(`/api/workspaces/${workspaceId}/meetings`),
     create: (workspaceId: string, body: object) =>
       apiFetch(`/api/workspaces/${workspaceId}/meetings`, { method: 'POST', body: JSON.stringify(body) }),
-    toggleAction: (workspaceId: string, meetingId: string, actionId: string) =>
-      apiFetch(`/api/workspaces/${workspaceId}/meetings/${meetingId}/actions/${actionId}`, { method: 'PATCH' }),
+    update: (workspaceId: string, meetingId: string, body: object) =>
+      apiFetch(`/api/workspaces/${workspaceId}/meetings/${meetingId}`, { method: 'PATCH', body: JSON.stringify(body) }),
     delete: (workspaceId: string, meetingId: string) =>
       apiFetch(`/api/workspaces/${workspaceId}/meetings/${meetingId}`, { method: 'DELETE' }),
+    toggleAction: (workspaceId: string, meetingId: string, actionId: string) =>
+      apiFetch(`/api/workspaces/${workspaceId}/meetings/${meetingId}/actions/${actionId}`, { method: 'PATCH' }),
+    addNote: (workspaceId: string, meetingId: string, body: { text: string }) =>
+      apiFetch(`/api/workspaces/${workspaceId}/meetings/${meetingId}/notes`, { method: 'POST', body: JSON.stringify(body) }),
+    addAction: (workspaceId: string, meetingId: string, body: { text: string; assigneeId?: string | null }) =>
+      apiFetch(`/api/workspaces/${workspaceId}/meetings/${meetingId}/actions`, { method: 'POST', body: JSON.stringify(body) }),
+  },
+
+  notifications: {
+    list: (workspaceId: string) =>
+      apiFetch(`/api/workspaces/${workspaceId}/notifications`),
+    markAllRead: (workspaceId: string) =>
+      apiFetch('/api/notifications/mark-read', { method: 'POST', body: JSON.stringify({ workspaceId }) }),
+  },
+
+  milestones: {
+    list: (workspaceId: string) =>
+      apiFetch(`/api/workspaces/${workspaceId}/milestones`),
+    create: (workspaceId: string, body: { title: string; description?: string; dueDate: string; status?: string }) =>
+      apiFetch(`/api/workspaces/${workspaceId}/milestones`, { method: 'POST', body: JSON.stringify(body) }),
+    update: (workspaceId: string, milestoneId: string, body: object) =>
+      apiFetch(`/api/workspaces/${workspaceId}/milestones/${milestoneId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    delete: (workspaceId: string, milestoneId: string) =>
+      apiFetch(`/api/workspaces/${workspaceId}/milestones/${milestoneId}`, { method: 'DELETE' }),
   },
 
   messages: {

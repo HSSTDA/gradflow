@@ -1,64 +1,58 @@
 import { create } from 'zustand'
-
-export type ItemType = 'red' | 'blue' | 'green' | 'amber'
-export type Category = 'Instructions' | 'Critical' | 'Decision' | 'Resources'
+import { api } from '@/lib/api'
 
 export interface PinnedItem {
   id:       string
-  type:     ItemType
-  category: Category
   title:    string
   body:     string
-  by:       string
-  date:     string
+  category: 'INSTRUCTIONS' | 'CRITICAL' | 'DECISION' | 'RESOURCES' | 'ANNOUNCEMENT'
   pinned:   boolean
+  date:     string
+  addedBy:  { id: string; name: string; avatarUrl?: string }
 }
 
 interface ImportantStore {
   items:      PinnedItem[]
-  addItem:    (item: PinnedItem) => void
-  togglePin:  (id: string) => void
-  removeItem: (id: string) => void
+  isLoading:  boolean
+  fetchItems: (workspaceId: string) => Promise<void>
+  addItem:    (workspaceId: string, data: { title: string; body: string; category: string }) => Promise<void>
+  deleteItem: (workspaceId: string, itemId: string) => Promise<void>
+  togglePin:  (workspaceId: string, itemId: string, pinned: boolean) => Promise<void>
 }
 
 export const useImportantStore = create<ImportantStore>((set) => ({
-  items: [
-    {
-      id: 'i1', type: 'red', category: 'Instructions', pinned: true,
-      title: '⚡ Supervisor Feedback — Week 8',
-      body:  'Dr. Khalid wants the system to support multi-user roles.\nMake sure the DB schema reflects this before the next meeting.\nAlso requested: add an activity log for all major user actions.',
-      by: 'Sara Ahmed', date: 'May 5',
-    },
-    {
-      id: 'i2', type: 'red', category: 'Critical', pinned: true,
-      title: '📋 Final Submission Requirements',
-      body:  '1. Full documentation — minimum 80 pages\n2. Source code pushed to GitHub (clean commits)\n3. Demo video: 5–7 minutes\n4. Abstract in both English and Arabic\n5. System deployed on live server before June 18',
-      by: 'Dr. Khalid', date: 'Apr 28',
-    },
-    {
-      id: 'i3', type: 'green', category: 'Decision', pinned: true,
-      title: '✅ Agreed Development Stack',
-      body:  'Frontend: React + Tailwind CSS\nBackend: Node.js + Express\nDatabase: PostgreSQL\nHosting: Vercel (frontend) + Railway (backend)\nVersion control: GitHub — all commits must have clear messages',
-      by: 'Omar Khalil', date: 'May 2',
-    },
-    {
-      id: 'i4', type: 'amber', category: 'Resources', pinned: true,
-      title: '🔗 Key Project Links',
-      body:  'GitHub Repository · Figma Design File · Google Drive Folder · Supervisor Email Thread · Initial Proposal PDF',
-      by: 'Omar Khalil', date: 'May 1',
-    },
-  ],
+  items:     [],
+  isLoading: false,
 
-  addItem: (item) =>
-    set((state) => ({ items: [item, ...state.items] })),
+  fetchItems: async (workspaceId) => {
+    set({ isLoading: true })
+    const result = await api.pinned.list(workspaceId)
+    if (result.success) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      set({ items: (result.data as any).items, isLoading: false })
+    } else {
+      set({ isLoading: false })
+    }
+  },
 
-  togglePin: (id) =>
-    set((state) => ({
-      items: state.items.map((i) =>
-        i.id !== id ? i : { ...i, pinned: !i.pinned }
-      ),
-    })),
+  addItem: async (workspaceId, data) => {
+    const result = await api.pinned.create(workspaceId, data)
+    if (result.success) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const item = (result.data as any).item as PinnedItem
+      set(state => ({ items: [item, ...state.items] }))
+    }
+  },
 
-  removeItem: (id) =>
-    set((state) => ({ items: state.items.filter((i) => i.id !== id) })),
+  deleteItem: async (workspaceId, itemId) => {
+    await api.pinned.delete(workspaceId, itemId)
+    set(state => ({ items: state.items.filter(i => i.id !== itemId) }))
+  },
+
+  togglePin: async (workspaceId, itemId, pinned) => {
+    await api.pinned.update(workspaceId, itemId, { pinned })
+    set(state => ({
+      items: state.items.map(i => i.id === itemId ? { ...i, pinned } : i)
+    }))
+  },
 }))

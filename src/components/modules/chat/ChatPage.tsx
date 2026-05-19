@@ -1,191 +1,184 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { api } from '@/lib/api';
+import { useAuthStore } from '@/store/authStore';
+import { createNotification } from '@/lib/notify';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Tab = 'team' | 'mentions' | 'dm';
 
-interface Message {
-  id:     number;
-  sender: string;
-  text:   string;
-  time:   string;
-  self:   boolean;
-}
-
-interface DMMessage {
-  sender: string;
-  text:   string;
-  time:   string;
-  self:   boolean;
-}
-
-// ─── Data ─────────────────────────────────────────────────────────────────────
-const MEMBER_MAP: Record<string, { name: string; color: string; online: boolean }> = {
-  SA: { name: 'Sara Ahmed',  color: '#D4500A', online: true  },
-  OK: { name: 'Omar Khalil', color: '#2563EB', online: true  },
-  LH: { name: 'Lina Hassan', color: '#16A34A', online: true  },
-  AN: { name: 'Ahmed Nour',  color: '#7C3AED', online: false },
-  NS: { name: 'Nora Salem',  color: '#D97706', online: true  },
-};
-
-const MEMBER_IDS = ['SA', 'OK', 'LH', 'AN', 'NS'];
-
-const INIT_MESSAGES: Message[] = [
-  { id:1, sender:'LH',   self:false, time:'10:22 AM', text:'Hey team! Just uploaded the new wireframes to Files. Can everyone review before the meeting?'  },
-  { id:2, sender:'OK',   self:false, time:'10:31 AM', text:'On it! The login flow looks great btw 👏'                                                        },
-  { id:3, sender:'SA',   self:false, time:'10:45 AM', text:'@Omar can you start on the auth API after reviewing?'                                            },
-  { id:4, sender:'self', self:true,  time:'10:47 AM', text:'Yes, already started. Should be done by Thursday.'                                               },
-  { id:5, sender:'AN',   self:false, time:'11:15 AM', text:'Also updated the literature review in the docs. Let me know if you need citations.'               },
-  { id:6, sender:'SA',   self:false, time:'11:30 AM', text:"Let's sync tomorrow at 10am before the supervisor meeting 📅"                                     },
-  { id:7, sender:'NS',   self:false, time:'11:45 AM', text:'@Sara I finished the DB migration scripts, pushed to GitHub ✅'                                   },
-  { id:8, sender:'self', self:true,  time:'11:50 AM', text:'Nice work everyone. See you all tomorrow 👋'                                                       },
-];
-
-const MENTIONS = [
-  { id:'m1', sender:'SA', time:'10:45 AM',          text:'@Omar can you start on the auth API after reviewing?'              },
-  { id:'m2', sender:'NS', time:'Yesterday 3:20 PM', text:'@Omar pushed auth changes, please review before merge'             },
-  { id:'m3', sender:'SA', time:'May 6 9:15 AM',     text:'@Omar the supervisor wants the activity log added this week'       },
-];
-
-const DM_MEMBERS = ['SA', 'LH', 'AN', 'NS'];
-const DM_UNREAD: Record<string, boolean> = { SA: true };
-
-const INIT_DM: Record<string, DMMessage[]> = {
-  SA: [
-    { sender:'SA',   self:false, time:'9:15 AM',  text:'Hey, did you push the auth changes to GitHub?'                                         },
-    { sender:'self', self:true,  time:'9:18 AM',  text:'Not yet, finishing up the JWT refresh logic. Will push by noon.'                        },
-    { sender:'SA',   self:false, time:'9:20 AM',  text:'Perfect. The supervisor meeting is at 2pm so we need it ready before that 🙏'           },
-    { sender:'self', self:true,  time:'11:52 AM', text:'Done ✅ just pushed. Branch is auth/jwt-refresh'                                        },
-    { sender:'SA',   self:false, time:'11:55 AM', text:'Amazing! Merging now 🚀'                                                                },
-  ],
-  LH: [],
-  AN: [],
-  NS: [],
-};
-
-const PINNED_ITEMS = [
-  'Meeting tomorrow at 10am — review wireframes before supervisor call',
-  'Final deadline: June 20 — deployment required before June 18',
-];
-
-const MENTION_NAMES = ['@Sara', '@Omar', '@Lina', '@Ahmed', '@Nora'];
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+const PALETTE = ['#D4500A', '#2563EB', '#16A34A', '#7C3AED', '#D97706', '#0891B2', '#DC2626'];
+
+function hashColor(str: string): string {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = str.charCodeAt(i) + ((h << 5) - h);
+  return PALETTE[Math.abs(h) % PALETTE.length];
+}
+
+function getInitials(name: string): string {
+  return (name ?? '?').split(' ').map(p => p[0]).join('').slice(0, 2).toUpperCase();
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
 function parseMentions(text: string): React.ReactNode[] {
-  const segments = text.split(/(@(?:Sara|Omar|Lina|Ahmed|Nora))/g);
-  return segments.map((seg, i) =>
-    MENTION_NAMES.includes(seg) ? (
+  const parts = text.split(/(@\w+)/g);
+  return parts.map((part, i) =>
+    part.startsWith('@') ? (
       <span key={i} style={{
-        background:   'var(--accent-light)',
-        color:        'var(--accent)',
-        borderRadius: 4,
-        padding:      '1px 5px',
-        fontWeight:   600,
-        fontSize:     13,
+        background: 'var(--accent-light)', color: 'var(--accent)',
+        borderRadius: 4, padding: '1px 5px', fontWeight: 600, fontSize: 13,
       }}>
-        {seg}
+        {part}
       </span>
-    ) : seg
+    ) : part
   );
 }
 
 // ─── ChatPage ─────────────────────────────────────────────────────────────────
 export default function ChatPage() {
-  const [activeTab,     setActiveTab]     = useState<Tab>('team');
-  const [messages,      setMessages]      = useState(INIT_MESSAGES);
-  const [teamInput,     setTeamInput]     = useState('');
-  const [hoveredBubble, setHoveredBubble] = useState<number | null>(null);
-  const [activeDM,      setActiveDM]      = useState('SA');
-  const [dmMessages,    setDmMessages]    = useState(INIT_DM);
-  const [dmInput,       setDmInput]       = useState('');
+  const workspaceId = useAuthStore(s => s.currentWorkspace?.id);
+  const currentUser = useAuthStore(s => s.user);
+
+  const [activeTab,      setActiveTab]      = useState<Tab>('team');
+  const [messages,       setMessages]       = useState<any[]>([]);
+  const [dmMessages,     setDmMessages]     = useState<any[]>([]);
+  const [members,        setMembers]        = useState<any[]>([]);
+  const [pinnedMessages, setPinnedMessages] = useState<any[]>([]);
+  const [activeDM,       setActiveDM]       = useState('');
+  const [teamInput,      setTeamInput]      = useState('');
+  const [dmInput,        setDmInput]        = useState('');
+  const [hoveredBubble,  setHoveredBubble]  = useState<string | null>(null);
 
   const teamEndRef = useRef<HTMLDivElement>(null);
   const dmEndRef   = useRef<HTMLDivElement>(null);
 
+  // Initial load
+  useEffect(() => {
+    if (!workspaceId) return;
+
+    api.workspaces.members(workspaceId).then(res => {
+      if (res.success) setMembers((res.data as any).members ?? []);
+    });
+    api.messages.list(workspaceId).then(res => {
+      if (res.success) setMessages((res.data as any).messages ?? []);
+    });
+    api.messages.pinned(workspaceId).then(res => {
+      if (res.success) setPinnedMessages((res.data as any).messages ?? []);
+    });
+  }, [workspaceId]);
+
+  // Load DMs when active contact changes
+  useEffect(() => {
+    if (!workspaceId || !activeDM) return;
+    api.messages.dm(workspaceId, activeDM).then(res => {
+      if (res.success) setDmMessages((res.data as any).messages ?? []);
+    });
+  }, [workspaceId, activeDM]);
+
+  // Auto-scroll
   useEffect(() => { teamEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
   useEffect(() => { dmEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [activeDM, dmMessages]);
 
-  function sendTeam() {
-    if (!teamInput.trim()) return;
-    setMessages(prev => [...prev, {
-      id:     Date.now(),
-      sender: 'self',
-      self:   true,
-      time:   new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-      text:   teamInput.trim(),
-    }]);
-    setTeamInput('');
-  }
+  const getMember = (userId: string) => members.find(m => m.id === userId);
 
-  function sendDM() {
-    if (!dmInput.trim()) return;
-    setDmMessages(prev => ({
-      ...prev,
-      [activeDM]: [...(prev[activeDM] ?? []), {
-        sender: 'self',
-        self:   true,
-        time:   new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-        text:   dmInput.trim(),
-      }],
-    }));
-    setDmInput('');
-  }
+  const handleSend = async (isDM: boolean) => {
+    const text = isDM ? dmInput.trim() : teamInput.trim();
+    if (!text || !workspaceId) return;
+    if (isDM) setDmInput(''); else setTeamInput('');
+
+    const result = await api.messages.send(workspaceId, {
+      text,
+      receiverId: isDM && activeDM ? activeDM : undefined,
+    });
+    if (result.success) {
+      const msg = (result.data as any).message;
+      if (isDM) setDmMessages(prev => [...prev, msg]);
+      else {
+        setMessages(prev => [...prev, msg]);
+        // Fire mention notifications for team chat
+        const mentionRegex = /@(\w+)/g;
+        const mentionedNames = [...text.matchAll(mentionRegex)].map(m => m[1]);
+        for (const name of mentionedNames) {
+          const mentioned = members.find((m: any) =>
+            m.name.toLowerCase().startsWith(name.toLowerCase())
+          );
+          if (mentioned && mentioned.id !== currentUser?.id) {
+            createNotification({
+              userId: mentioned.id,
+              workspaceId,
+              type: 'mention',
+              title: 'You were mentioned',
+              body: `${currentUser?.name} mentioned you: "${text.slice(0, 60)}${text.length > 60 ? '…' : ''}"`,
+              triggeredById: currentUser?.id,
+            });
+          }
+        }
+      }
+    }
+  };
 
   // Group consecutive same-sender messages
-  type Group = { sender: string; self: boolean; msgs: Message[] };
-  const teamGroups: Group[] = [];
-  for (const msg of messages) {
-    const last = teamGroups[teamGroups.length - 1];
-    if (last && last.sender === msg.sender) last.msgs.push(msg);
-    else teamGroups.push({ sender: msg.sender, self: msg.self, msgs: [msg] });
+  type Group = { senderId: string; self: boolean; msgs: any[] };
+  function groupMessages(list: any[]): Group[] {
+    const groups: Group[] = [];
+    for (const msg of list) {
+      const last = groups[groups.length - 1];
+      const self = msg.senderId === currentUser?.id;
+      if (last && last.senderId === msg.senderId) last.msgs.push(msg);
+      else groups.push({ senderId: msg.senderId, self, msgs: [msg] });
+    }
+    return groups;
   }
 
-  const onlineIds = MEMBER_IDS.filter(id => MEMBER_MAP[id].online);
+  const teamGroups   = groupMessages(messages);
+  const dmGroups     = groupMessages(dmMessages);
+  const dmPeers      = members.filter(m => m.id !== currentUser?.id);
+  const activeMember = getMember(activeDM);
+
+  const mentions = messages.filter(m =>
+    m.text.toLowerCase().includes(`@${currentUser?.name?.split(' ')[0].toLowerCase() ?? '___'}`)
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px)', overflow: 'hidden' }}>
 
       {/* ── Top bar ── */}
       <div style={{
-        height:         52,
-        flexShrink:     0,
-        background:     'var(--surface)',
-        borderBottom:   '1px solid var(--border)',
-        padding:        '0 28px',
-        display:        'flex',
-        alignItems:     'center',
-        justifyContent: 'space-between',
+        height: 52, flexShrink: 0,
+        background: 'var(--surface)', borderBottom: '1px solid var(--border)',
+        padding: '0 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
-
-        {/* Tabs */}
         <div style={{ display: 'flex', alignItems: 'stretch', height: '100%' }}>
           {(['team', 'mentions', 'dm'] as Tab[]).map(tab => {
-            const label    = tab === 'team' ? 'Team Chat' : tab === 'mentions' ? 'Mentions' : 'Direct Messages';
+            const label = tab === 'team' ? 'Team Chat' : tab === 'mentions' ? 'Mentions' : 'Direct Messages';
             const isActive = activeTab === tab;
             return (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 style={{
-                  padding:      '6px 0',
-                  marginRight:  28,
-                  fontSize:     13,
-                  fontWeight:   600,
-                  color:        isActive ? 'var(--text-primary)' : 'var(--text-muted)',
-                  background:   'none',
-                  border:       'none',
+                  padding: '6px 0', marginRight: 28, fontSize: 13, fontWeight: 600,
+                  color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
+                  background: 'none', border: 'none',
                   borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent',
-                  cursor:       'pointer',
-                  display:      'flex',
-                  alignItems:   'center',
-                  gap:          6,
-                  transition:   'var(--transition)',
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                  transition: 'var(--transition)',
                 }}
               >
                 {label}
-                {tab === 'mentions' && !isActive && (
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+                {tab === 'mentions' && mentions.length > 0 && (
+                  <span style={{
+                    background: 'var(--accent)', color: 'white',
+                    fontSize: 9, fontWeight: 700, borderRadius: 99,
+                    padding: '1px 5px', lineHeight: 1.6,
+                  }}>
+                    {mentions.length}
+                  </span>
                 )}
               </button>
             );
@@ -195,33 +188,26 @@ export default function ChatPage() {
         {/* Online avatar stack */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ display: 'flex' }}>
-            {onlineIds.map((id, i) => (
+            {members.slice(0, 5).map((m, i) => (
               <div
-                key={id}
-                title={MEMBER_MAP[id].name}
+                key={m.id}
+                title={m.name}
                 style={{
-                  width:          24,
-                  height:         24,
-                  borderRadius:   '50%',
-                  background:     MEMBER_MAP[id].color,
-                  display:        'flex',
-                  alignItems:     'center',
-                  justifyContent: 'center',
-                  fontSize:       8,
-                  fontWeight:     700,
-                  color:          'white',
-                  border:         '2px solid var(--surface)',
-                  marginLeft:     i === 0 ? 0 : -6,
-                  position:       'relative',
-                  zIndex:         onlineIds.length - i,
+                  width: 24, height: 24, borderRadius: '50%',
+                  background: hashColor(m.id),
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 8, fontWeight: 700, color: 'white',
+                  border: '2px solid var(--surface)',
+                  marginLeft: i === 0 ? 0 : -6,
+                  position: 'relative', zIndex: members.length - i,
                 }}
               >
-                {id}
+                {getInitials(m.name)}
               </div>
             ))}
           </div>
           <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>
-            {onlineIds.length} online
+            {members.length} online
           </span>
         </div>
       </div>
@@ -232,106 +218,89 @@ export default function ChatPage() {
 
           {/* Messages column */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg)', minWidth: 0 }}>
-
             <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 2 }}>
 
-              {/* Date divider */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                 <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
                 <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>Today</span>
                 <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
               </div>
 
+              {teamGroups.length === 0 && (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 48 }}>
+                  <span style={{ fontSize: 14, color: 'var(--text-muted)' }}>No messages yet. Start the conversation 👋</span>
+                </div>
+              )}
+
               {teamGroups.map((group, gi) => {
-                const member = MEMBER_MAP[group.sender];
+                const member = getMember(group.senderId);
+                const name   = member?.name ?? group.senderId;
+                const color  = hashColor(group.senderId);
                 return (
                   <div
                     key={gi}
                     style={{
-                      display:       'flex',
-                      gap:           12,
-                      marginTop:     gi > 0 ? 16 : 0,
+                      display: 'flex', gap: 12, marginTop: gi > 0 ? 16 : 0,
                       flexDirection: group.self ? 'row-reverse' : 'row',
                     }}
                   >
-                    {/* Avatar or spacer */}
                     {group.self ? (
                       <div style={{ width: 32, flexShrink: 0 }} />
                     ) : (
                       <div style={{
-                        width:          32,
-                        height:         32,
-                        borderRadius:   '50%',
-                        background:     member?.color ?? '#888',
-                        display:        'flex',
-                        alignItems:     'center',
-                        justifyContent: 'center',
-                        fontSize:       11,
-                        fontWeight:     700,
-                        color:          'white',
-                        flexShrink:     0,
-                        alignSelf:      'flex-start',
+                        width: 32, height: 32, borderRadius: '50%',
+                        background: color,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 11, fontWeight: 700, color: 'white',
+                        flexShrink: 0, alignSelf: 'flex-start',
                       }}>
-                        {group.sender}
+                        {getInitials(name)}
                       </div>
                     )}
 
-                    {/* Bubbles column */}
                     <div style={{
-                      display:       'flex',
-                      flexDirection: 'column',
-                      gap:           3,
-                      alignItems:    group.self ? 'flex-end' : 'flex-start',
-                      maxWidth:      640,
+                      display: 'flex', flexDirection: 'column', gap: 3,
+                      alignItems: group.self ? 'flex-end' : 'flex-start',
+                      maxWidth: 640,
                     }}>
-                      {/* Header — first message only */}
-                      {!group.self && member && (
+                      {!group.self && (
                         <div style={{ display: 'flex', alignItems: 'baseline' }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{member.name}</span>
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>{group.msgs[0].time}</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{name}</span>
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>
+                            {formatTime(group.msgs[0].createdAt)}
+                          </span>
                         </div>
                       )}
 
-                      {group.msgs.map(msg => (
+                      {group.msgs.map((msg: any) => (
                         <div
                           key={msg.id}
                           style={{ position: 'relative' }}
                           onMouseEnter={() => setHoveredBubble(msg.id)}
                           onMouseLeave={() => setHoveredBubble(null)}
                         >
-                          {/* Reaction bar */}
                           {hoveredBubble === msg.id && (
                             <div style={{
-                              position:     'absolute',
-                              top:          -32,
-                              left:         msg.self ? 'auto' : 0,
-                              right:        msg.self ? 0 : 'auto',
-                              zIndex:       5,
-                              background:   'var(--surface)',
-                              border:       '1px solid var(--border)',
-                              borderRadius: 20,
-                              padding:      '3px 8px',
-                              display:      'flex',
-                              gap:          6,
-                              fontSize:     14,
-                              cursor:       'pointer',
-                              whiteSpace:   'nowrap',
-                              boxShadow:    'var(--shadow-sm)',
+                              position: 'absolute', top: -32,
+                              left: group.self ? 'auto' : 0,
+                              right: group.self ? 0 : 'auto',
+                              zIndex: 5,
+                              background: 'var(--surface)', border: '1px solid var(--border)',
+                              borderRadius: 20, padding: '3px 8px',
+                              display: 'flex', gap: 6, fontSize: 14,
+                              cursor: 'pointer', whiteSpace: 'nowrap',
+                              boxShadow: 'var(--shadow-sm)',
                             }}>
                               <span>👍</span><span>❤️</span><span>😂</span>
                             </div>
                           )}
-
                           <div style={{
-                            background:   msg.self ? 'var(--accent)' : 'var(--surface)',
-                            color:        msg.self ? 'white' : 'var(--text-primary)',
-                            border:       msg.self ? 'none' : '1px solid var(--border)',
-                            borderRadius: msg.self ? '12px 3px 12px 12px' : '3px 12px 12px 12px',
-                            padding:      '10px 14px',
-                            fontSize:     13.5,
-                            lineHeight:   1.6,
-                            maxWidth:     640,
-                            display:      'inline-block',
+                            background:   group.self ? 'var(--accent)' : 'var(--surface)',
+                            color:        group.self ? 'white' : 'var(--text-primary)',
+                            border:       group.self ? 'none' : '1px solid var(--border)',
+                            borderRadius: group.self ? '12px 3px 12px 12px' : '3px 12px 12px 12px',
+                            padding: '10px 14px', fontSize: 13.5, lineHeight: 1.6,
+                            maxWidth: 640, display: 'inline-block',
                           }}>
                             {parseMentions(msg.text)}
                           </div>
@@ -348,45 +317,29 @@ export default function ChatPage() {
             {/* Input */}
             <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0 }}>
               <div style={{
-                background:   'var(--bg)',
-                border:       '1px solid var(--border)',
-                borderRadius: 'var(--radius-md)',
-                padding:      '10px 14px',
-                display:      'flex',
-                gap:          10,
-                alignItems:   'center',
+                background: 'var(--bg)', border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-md)', padding: '10px 14px',
+                display: 'flex', gap: 10, alignItems: 'center',
               }}>
                 <span style={{ fontSize: 16, color: 'var(--text-muted)', cursor: 'pointer' }}>📎</span>
                 <textarea
                   value={teamInput}
                   onChange={e => setTeamInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTeam(); } }}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(false); } }}
                   placeholder="Message the team… use @ to mention"
                   rows={1}
                   style={{
-                    flex:       1,
-                    border:     'none',
-                    background: 'none',
-                    fontSize:   14,
-                    fontFamily: 'var(--font-body)',
-                    resize:     'none',
-                    outline:    'none',
-                    maxHeight:  100,
-                    color:      'var(--text-primary)',
-                    lineHeight: 1.5,
+                    flex: 1, border: 'none', background: 'none', fontSize: 14,
+                    fontFamily: 'var(--font-body)', resize: 'none', outline: 'none',
+                    maxHeight: 100, color: 'var(--text-primary)', lineHeight: 1.5,
                   }}
                 />
                 <button
                   style={{
-                    fontSize:     14,
-                    fontWeight:   700,
-                    color:        'var(--text-muted)',
-                    border:       '1px solid var(--border)',
-                    borderRadius: 6,
-                    padding:      '4px 8px',
-                    background:   'transparent',
-                    cursor:       'pointer',
-                    transition:   'var(--transition)',
+                    fontSize: 14, fontWeight: 700, color: 'var(--text-muted)',
+                    border: '1px solid var(--border)', borderRadius: 6,
+                    padding: '4px 8px', background: 'transparent', cursor: 'pointer',
+                    transition: 'var(--transition)',
                   }}
                   onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent)'; }}
                   onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; }}
@@ -394,17 +347,11 @@ export default function ChatPage() {
                   @
                 </button>
                 <button
-                  onClick={sendTeam}
+                  onClick={() => handleSend(false)}
                   style={{
-                    background:   'var(--accent)',
-                    color:        'white',
-                    border:       'none',
-                    borderRadius: 8,
-                    padding:      '6px 14px',
-                    fontSize:     13,
-                    fontWeight:   600,
-                    cursor:       'pointer',
-                    transition:   'var(--transition)',
+                    background: 'var(--accent)', color: 'white', border: 'none',
+                    borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600,
+                    cursor: 'pointer', transition: 'var(--transition)',
                   }}
                   onMouseEnter={e => { e.currentTarget.style.background = '#C04808'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = 'var(--accent)'; }}
@@ -417,50 +364,32 @@ export default function ChatPage() {
 
           {/* Right sidebar */}
           <div style={{
-            width:      200,
-            flexShrink: 0,
-            background: 'var(--surface)',
-            borderLeft: '1px solid var(--border)',
-            padding:    16,
-            overflowY:  'auto',
+            width: 200, flexShrink: 0,
+            background: 'var(--surface)', borderLeft: '1px solid var(--border)',
+            padding: 16, overflowY: 'auto',
           }}>
             <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.8px', color: 'var(--text-muted)' }}>
               Team
             </div>
-
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {MEMBER_IDS.map(id => {
-                const m = MEMBER_MAP[id];
-                return (
-                  <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{
-                      width:          26,
-                      height:         26,
-                      borderRadius:   '50%',
-                      background:     m.color,
-                      display:        'flex',
-                      alignItems:     'center',
-                      justifyContent: 'center',
-                      fontSize:       9,
-                      fontWeight:     700,
-                      color:          'white',
-                      flexShrink:     0,
-                    }}>
-                      {id}
-                    </div>
-                    <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', flex: 1 }}>
-                      {m.name.split(' ')[0]}
-                    </span>
-                    <div style={{
-                      width:        7,
-                      height:       7,
-                      borderRadius: '50%',
-                      background:   m.online ? 'var(--green)' : '#D1CDC8',
-                      flexShrink:   0,
-                    }} />
+              {members.length === 0 && (
+                <span style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>No members yet</span>
+              )}
+              {members.map(m => (
+                <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{
+                    width: 26, height: 26, borderRadius: '50%', background: hashColor(m.id),
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 9, fontWeight: 700, color: 'white', flexShrink: 0,
+                  }}>
+                    {getInitials(m.name)}
                   </div>
-                );
-              })}
+                  <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', flex: 1 }}>
+                    {m.name.split(' ')[0]}
+                  </span>
+                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', flexShrink: 0 }} />
+                </div>
+              ))}
             </div>
 
             <div style={{ height: 1, background: 'var(--border)', margin: '16px 0' }} />
@@ -469,28 +398,23 @@ export default function ChatPage() {
               Pinned
             </div>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {PINNED_ITEMS.map((text, i) => (
-                <div key={i} style={{
-                  padding:    '8px 10px',
-                  background: 'var(--bg)',
-                  borderRadius: 6,
-                  cursor:     'pointer',
+              {pinnedMessages.length === 0 && (
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>No pinned messages</span>
+              )}
+              {pinnedMessages.slice(0, 3).map((msg: any) => (
+                <div key={msg.id} style={{
+                  padding: '8px 10px', background: 'var(--bg)',
+                  borderRadius: 6, cursor: 'pointer',
                   borderLeft: '3px solid var(--accent)',
-                  display:    'flex',
-                  gap:        6,
-                  transition: 'var(--transition)',
+                  display: 'flex', gap: 6, transition: 'var(--transition)',
                 }}>
                   <span style={{ fontSize: 11, flexShrink: 0, marginTop: 1 }}>📌</span>
                   <span style={{
-                    fontSize:        11,
-                    color:           'var(--text-muted)',
-                    lineHeight:      1.4,
-                    display:         '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical' as const,
-                    overflow:        'hidden',
+                    fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4,
+                    display: '-webkit-box', WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical' as const, overflow: 'hidden',
                   }}>
-                    {text}
+                    {msg.text}
                   </span>
                 </div>
               ))}
@@ -502,51 +426,40 @@ export default function ChatPage() {
       {/* ── TAB 2: Mentions ── */}
       {activeTab === 'mentions' && (
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
-          {MENTIONS.map(m => {
-            const member = MEMBER_MAP[m.sender];
+          {mentions.length === 0 && (
+            <div style={{ textAlign: 'center', paddingTop: 48, fontSize: 14, color: 'var(--text-muted)' }}>
+              No mentions yet
+            </div>
+          )}
+          {mentions.map((msg: any) => {
+            const member = getMember(msg.senderId);
+            const name   = member?.name ?? msg.sender?.name ?? msg.senderId;
             return (
-              <div key={m.id} style={{
-                background:   'var(--surface)',
-                border:       '1px solid var(--border)',
-                borderRadius: 'var(--radius-md)',
-                padding:      '14px 18px',
-                marginBottom: 10,
+              <div key={msg.id} style={{
+                background: 'var(--surface)', border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-md)', padding: '14px 18px', marginBottom: 10,
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                   <div style={{
-                    width:          28,
-                    height:         28,
-                    borderRadius:   '50%',
-                    background:     member?.color ?? '#888',
-                    display:        'flex',
-                    alignItems:     'center',
-                    justifyContent: 'center',
-                    fontSize:       10,
-                    fontWeight:     700,
-                    color:          'white',
-                    flexShrink:     0,
+                    width: 28, height: 28, borderRadius: '50%', background: hashColor(msg.senderId),
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 10, fontWeight: 700, color: 'white', flexShrink: 0,
                   }}>
-                    {m.sender}
+                    {getInitials(name)}
                   </div>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                    {member?.name ?? m.sender}
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{name}</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>
+                    {formatTime(msg.createdAt)}
                   </span>
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>{m.time}</span>
                 </div>
-
                 <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 10px' }}>
-                  {parseMentions(m.text)}
+                  {parseMentions(msg.text)}
                 </p>
-
                 <button
+                  onClick={() => { setActiveTab('team'); setTeamInput(`@${name.split(' ')[0]} `); }}
                   style={{
-                    fontSize:   11,
-                    color:      'var(--text-muted)',
-                    background: 'none',
-                    border:     'none',
-                    cursor:     'pointer',
-                    padding:    0,
-                    transition: 'var(--transition)',
+                    fontSize: 11, color: 'var(--text-muted)', background: 'none',
+                    border: 'none', cursor: 'pointer', padding: 0, transition: 'var(--transition)',
                   }}
                   onMouseEnter={e => { e.currentTarget.style.color = 'var(--accent)'; }}
                   onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; }}
@@ -565,63 +478,45 @@ export default function ChatPage() {
 
           {/* DM member list */}
           <div style={{
-            width:         200,
-            flexShrink:    0,
-            borderRight:   '1px solid var(--border)',
-            background:    'var(--surface)',
-            display:       'flex',
-            flexDirection: 'column',
+            width: 200, flexShrink: 0, borderRight: '1px solid var(--border)',
+            background: 'var(--surface)', display: 'flex', flexDirection: 'column',
           }}>
             <div style={{
-              fontSize:     12,
-              fontWeight:   700,
-              color:        'var(--text-primary)',
-              padding:      '14px 16px',
-              borderBottom: '1px solid var(--border)',
+              fontSize: 12, fontWeight: 700, color: 'var(--text-primary)',
+              padding: '14px 16px', borderBottom: '1px solid var(--border)',
             }}>
               Direct Messages
             </div>
             <div style={{ flex: 1, overflowY: 'auto' }}>
-              {DM_MEMBERS.map(id => {
-                const m        = MEMBER_MAP[id];
-                const isActive = activeDM === id;
+              {dmPeers.length === 0 && (
+                <div style={{ padding: '16px', fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  No members yet
+                </div>
+              )}
+              {dmPeers.map(m => {
+                const isActive = activeDM === m.id;
                 return (
                   <div
-                    key={id}
-                    onClick={() => setActiveDM(id)}
+                    key={m.id}
+                    onClick={() => setActiveDM(m.id)}
                     style={{
-                      padding:    '9px 16px',
-                      cursor:     'pointer',
+                      padding: '9px 16px', cursor: 'pointer',
                       background: isActive ? 'var(--accent-light)' : 'transparent',
-                      display:    'flex',
-                      alignItems: 'center',
-                      gap:        9,
-                      transition: 'var(--transition)',
+                      display: 'flex', alignItems: 'center', gap: 9, transition: 'var(--transition)',
                     }}
                     onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--bg)'; }}
                     onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
                   >
                     <div style={{
-                      width:          28,
-                      height:         28,
-                      borderRadius:   '50%',
-                      background:     m.color,
-                      display:        'flex',
-                      alignItems:     'center',
-                      justifyContent: 'center',
-                      fontSize:       10,
-                      fontWeight:     700,
-                      color:          'white',
-                      flexShrink:     0,
+                      width: 28, height: 28, borderRadius: '50%', background: hashColor(m.id),
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 10, fontWeight: 700, color: 'white', flexShrink: 0,
                     }}>
-                      {id}
+                      {getInitials(m.name)}
                     </div>
                     <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', flex: 1 }}>
                       {m.name.split(' ')[0]}
                     </span>
-                    {DM_UNREAD[id] && (
-                      <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
-                    )}
                   </div>
                 );
               })}
@@ -630,152 +525,112 @@ export default function ChatPage() {
 
           {/* DM conversation */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
-
             <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {(() => {
-                const msgs = dmMessages[activeDM] ?? [];
-                if (msgs.length === 0) {
-                  return (
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 28 }}>💬</span>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
-                        Start a conversation with {MEMBER_MAP[activeDM]?.name.split(' ')[0]}
-                      </span>
-                    </div>
-                  );
-                }
+              {!activeDM ? (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 48 }}>
+                  <span style={{ fontSize: 14, color: 'var(--text-muted)' }}>Select a member to start a conversation</span>
+                </div>
+              ) : dmGroups.length === 0 ? (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 28 }}>💬</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                    Start a conversation with {activeMember?.name?.split(' ')[0] ?? 'this person'}
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                    <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>Today</span>
+                    <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                  </div>
 
-                type DMGroup = { sender: string; self: boolean; msgs: DMMessage[] };
-                const dmGroups: DMGroup[] = [];
-                for (const msg of msgs) {
-                  const last = dmGroups[dmGroups.length - 1];
-                  if (last && last.sender === msg.sender) last.msgs.push(msg);
-                  else dmGroups.push({ sender: msg.sender, self: msg.self, msgs: [msg] });
-                }
-
-                return (
-                  <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-                      <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>Today</span>
-                      <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-                    </div>
-
-                    {dmGroups.map((group, gi) => {
-                      const member = MEMBER_MAP[group.sender];
-                      return (
-                        <div
-                          key={gi}
-                          style={{
-                            display:       'flex',
-                            gap:           12,
-                            marginTop:     gi > 0 ? 16 : 0,
-                            flexDirection: group.self ? 'row-reverse' : 'row',
-                          }}
-                        >
-                          {group.self ? (
-                            <div style={{ width: 32, flexShrink: 0 }} />
-                          ) : (
-                            <div style={{
-                              width:          32,
-                              height:         32,
-                              borderRadius:   '50%',
-                              background:     member?.color ?? '#888',
-                              display:        'flex',
-                              alignItems:     'center',
-                              justifyContent: 'center',
-                              fontSize:       11,
-                              fontWeight:     700,
-                              color:          'white',
-                              flexShrink:     0,
-                              alignSelf:      'flex-start',
-                            }}>
-                              {group.sender}
+                  {dmGroups.map((group, gi) => {
+                    const member = getMember(group.senderId);
+                    const name   = member?.name ?? group.senderId;
+                    return (
+                      <div
+                        key={gi}
+                        style={{
+                          display: 'flex', gap: 12, marginTop: gi > 0 ? 16 : 0,
+                          flexDirection: group.self ? 'row-reverse' : 'row',
+                        }}
+                      >
+                        {group.self ? (
+                          <div style={{ width: 32, flexShrink: 0 }} />
+                        ) : (
+                          <div style={{
+                            width: 32, height: 32, borderRadius: '50%', background: hashColor(group.senderId),
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 11, fontWeight: 700, color: 'white',
+                            flexShrink: 0, alignSelf: 'flex-start',
+                          }}>
+                            {getInitials(name)}
+                          </div>
+                        )}
+                        <div style={{
+                          display: 'flex', flexDirection: 'column', gap: 3,
+                          alignItems: group.self ? 'flex-end' : 'flex-start', maxWidth: 520,
+                        }}>
+                          {!group.self && (
+                            <div style={{ display: 'flex', alignItems: 'baseline' }}>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{name}</span>
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>
+                                {formatTime(group.msgs[0].createdAt)}
+                              </span>
                             </div>
                           )}
-
-                          <div style={{
-                            display:       'flex',
-                            flexDirection: 'column',
-                            gap:           3,
-                            alignItems:    group.self ? 'flex-end' : 'flex-start',
-                            maxWidth:      520,
-                          }}>
-                            {!group.self && member && (
-                              <div style={{ display: 'flex', alignItems: 'baseline' }}>
-                                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{member.name}</span>
-                                <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 8 }}>{group.msgs[0].time}</span>
-                              </div>
-                            )}
-                            {group.msgs.map((msg, mi) => (
-                              <div key={mi} style={{
-                                background:   msg.self ? 'var(--accent)' : 'var(--surface)',
-                                color:        msg.self ? 'white' : 'var(--text-primary)',
-                                border:       msg.self ? 'none' : '1px solid var(--border)',
-                                borderRadius: msg.self ? '12px 3px 12px 12px' : '3px 12px 12px 12px',
-                                padding:      '10px 14px',
-                                fontSize:     13.5,
-                                lineHeight:   1.6,
-                                maxWidth:     520,
-                                display:      'inline-block',
-                              }}>
-                                {msg.text}
-                              </div>
-                            ))}
-                          </div>
+                          {group.msgs.map((msg: any, mi: number) => (
+                            <div key={mi} style={{
+                              background:   group.self ? 'var(--accent)' : 'var(--surface)',
+                              color:        group.self ? 'white' : 'var(--text-primary)',
+                              border:       group.self ? 'none' : '1px solid var(--border)',
+                              borderRadius: group.self ? '12px 3px 12px 12px' : '3px 12px 12px 12px',
+                              padding: '10px 14px', fontSize: 13.5, lineHeight: 1.6,
+                              maxWidth: 520, display: 'inline-block',
+                            }}>
+                              {msg.text}
+                            </div>
+                          ))}
                         </div>
-                      );
-                    })}
-                    <div ref={dmEndRef} />
-                  </>
-                );
-              })()}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+              <div ref={dmEndRef} />
             </div>
 
             {/* DM input */}
             <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', background: 'var(--surface)', flexShrink: 0 }}>
               <div style={{
-                background:   'var(--bg)',
-                border:       '1px solid var(--border)',
-                borderRadius: 'var(--radius-md)',
-                padding:      '10px 14px',
-                display:      'flex',
-                gap:          10,
-                alignItems:   'center',
+                background: 'var(--bg)', border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-md)', padding: '10px 14px',
+                display: 'flex', gap: 10, alignItems: 'center',
               }}>
                 <textarea
                   value={dmInput}
                   onChange={e => setDmInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendDM(); } }}
-                  placeholder={`Message ${MEMBER_MAP[activeDM]?.name.split(' ')[0] ?? ''}…`}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(true); } }}
+                  placeholder={activeDM ? `Message ${activeMember?.name?.split(' ')[0] ?? ''}…` : 'Select a member…'}
+                  disabled={!activeDM}
                   rows={1}
                   style={{
-                    flex:       1,
-                    border:     'none',
-                    background: 'none',
-                    fontSize:   14,
-                    fontFamily: 'var(--font-body)',
-                    resize:     'none',
-                    outline:    'none',
-                    maxHeight:  100,
-                    color:      'var(--text-primary)',
-                    lineHeight: 1.5,
+                    flex: 1, border: 'none', background: 'none', fontSize: 14,
+                    fontFamily: 'var(--font-body)', resize: 'none', outline: 'none',
+                    maxHeight: 100, color: 'var(--text-primary)', lineHeight: 1.5,
                   }}
                 />
                 <button
-                  onClick={sendDM}
+                  onClick={() => handleSend(true)}
+                  disabled={!activeDM}
                   style={{
-                    background:   'var(--accent)',
-                    color:        'white',
-                    border:       'none',
-                    borderRadius: 8,
-                    padding:      '6px 14px',
-                    fontSize:     13,
-                    fontWeight:   600,
-                    cursor:       'pointer',
-                    transition:   'var(--transition)',
+                    background: 'var(--accent)', color: 'white', border: 'none',
+                    borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600,
+                    cursor: activeDM ? 'pointer' : 'not-allowed',
+                    opacity: activeDM ? 1 : 0.4, transition: 'var(--transition)',
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.background = '#C04808'; }}
+                  onMouseEnter={e => { if (activeDM) e.currentTarget.style.background = '#C04808'; }}
                   onMouseLeave={e => { e.currentTarget.style.background = 'var(--accent)'; }}
                 >
                   Send

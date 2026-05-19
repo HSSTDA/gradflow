@@ -34,6 +34,7 @@ interface MeetingsStore {
 
   fetchMeetings: (workspaceId: string) => Promise<void>
   createMeeting: (workspaceId: string, data: object) => Promise<void>
+  updateMeeting: (workspaceId: string, meetingId: string, data: object) => Promise<void>
   toggleAction: (workspaceId: string, meetingId: string, actionId: string) => Promise<void>
   deleteMeeting: (workspaceId: string, meetingId: string) => Promise<void>
 }
@@ -56,7 +57,7 @@ function normalizeMeeting(m: any): Meeting {
   }
 }
 
-export const useMeetingsStore = create<MeetingsStore>((set) => ({
+export const useMeetingsStore = create<MeetingsStore>((set, get) => ({
   meetings: [],
   isLoading: false,
 
@@ -75,10 +76,12 @@ export const useMeetingsStore = create<MeetingsStore>((set) => ({
   createMeeting: async (workspaceId, data) => {
     const result = await api.meetings.create(workspaceId, data)
     if (result.success) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const meeting = normalizeMeeting((result.data as any).meeting)
-      set((state) => ({ meetings: [meeting, ...state.meetings] }))
+      await get().fetchMeetings(workspaceId)
     }
+  },
+
+  updateMeeting: async (workspaceId, meetingId, data) => {
+    await api.meetings.update(workspaceId, meetingId, data)
   },
 
   toggleAction: async (workspaceId, meetingId, actionId) => {

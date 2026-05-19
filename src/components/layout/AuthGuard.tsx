@@ -1,44 +1,28 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/authStore'
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { user, fetchWorkspaces, currentWorkspace } = useAuthStore()
-  const [checking, setChecking] = useState(true)
+  const router = useRouter()
+  const [hydrated, setHydrated] = useState(false)
+  const user = useAuthStore((state) => state.user)
 
   useEffect(() => {
-    const check = async () => {
-      if (!user) {
-        window.location.href = '/auth'
-        return
-      }
-      await fetchWorkspaces()
-      setChecking(false)
-    }
-    check()
+    const timer = setTimeout(() => {
+      setHydrated(true)
+    }, 100)
+    return () => clearTimeout(timer)
   }, [])
 
-  if (checking) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--bg)',
-        fontFamily: 'var(--font-body)',
-        fontSize: 13,
-        color: 'var(--text-muted)',
-      }}>
-        Loading GradFlow…
-      </div>
-    )
-  }
+  useEffect(() => {
+    if (hydrated && !user) {
+      router.replace('/auth')
+    }
+  }, [hydrated, user, router])
 
-  if (!currentWorkspace) {
-    window.location.href = '/workspace/new'
-    return null
-  }
+  if (!hydrated) return null
+  if (!user) return null
 
   return <>{children}</>
 }

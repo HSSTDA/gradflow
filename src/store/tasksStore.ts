@@ -28,7 +28,7 @@ interface TasksStore {
   error: string | null
 
   fetchTasks: (workspaceId: string) => Promise<void>
-  createTask: (workspaceId: string, data: { title: string; priority?: string }) => Promise<void>
+  createTask: (workspaceId: string, data: { title: string; priority?: string; status?: string }) => Promise<string | null>
   updateTask: (workspaceId: string, taskId: string, data: object) => Promise<void>
   deleteTask: (workspaceId: string, taskId: string) => Promise<void>
   toggleSubtask: (workspaceId: string, taskId: string, subtaskId: string, done: boolean) => Promise<void>
@@ -58,7 +58,9 @@ export const useTasksStore = create<TasksStore>((set) => ({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const newTask = (result.data as any).task
       set((state) => ({ tasks: [newTask, ...state.tasks] }))
+      return newTask.id as string
     }
+    return null
   },
 
   updateTask: async (workspaceId, taskId, data) => {

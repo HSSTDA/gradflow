@@ -7,41 +7,66 @@ import { useMeetingsStore } from '@/store/meetingsStore';
 import { useTasksStore } from '@/store/tasksStore';
 import { useFilesStore } from '@/store/filesStore';
 import { useImportantStore, type PinnedItem } from '@/store/importantStore';
+import { useAuthStore } from '@/store/authStore';
+import { useMilestonesStore, type Milestone } from '@/store/milestonesStore';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Priority = 'HIGH' | 'MEDIUM' | 'LOW';
 
+const STATUS_LABEL: Record<string, string> = {
+  UPCOMING:    'Upcoming',
+  IN_PROGRESS: 'In Progress',
+  COMPLETED:   'Done',
+  DELAYED:     'Delayed',
+}
+
+const STATUS_CLS: Record<string, string> = {
+  UPCOMING:    'bg-[var(--blue-light)]   text-[var(--blue)]',
+  IN_PROGRESS: 'bg-[var(--amber-light)]  text-[var(--amber)]',
+  COMPLETED:   'bg-[var(--green-light)]  text-[var(--green)]',
+  DELAYED:     'bg-[var(--red-light)]    text-[var(--red)]',
+}
+
+function daysUntil(dateStr: string) {
+  const diff = Math.ceil((new Date(dateStr).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+  if (diff < 0)  return { label: `${Math.abs(diff)}d overdue`, urgent: true }
+  if (diff === 0) return { label: 'Today',                     urgent: true }
+  if (diff <= 7)  return { label: `${diff}d left`,             urgent: true }
+  return { label: `${diff}d left`, urgent: false }
+}
+
 // ─── Data ─────────────────────────────────────────────────────────────────────
-const TASK_MEMBERS: Record<string, string> = {
-  OK: '#2563EB',
-  AN: '#7C3AED',
-  NS: '#D97706',
-  SA: '#D4500A',
-  LH: '#16A34A',
-};
-
-const DEADLINES: { color: string; day: string; month: string; name: string; sub: string }[] = [
-  { color: 'var(--accent)', day: '10', month: 'MAY', name: 'UI Prototype Review', sub: 'Milestone'         },
-  { color: 'var(--amber)',  day: '12', month: 'MAY', name: 'Chapter 3 Draft',     sub: 'Research · Ahmed'  },
-  { color: 'var(--blue)',   day: '25', month: 'MAY', name: 'Mid-Project Report',  sub: 'All members'       },
-  { color: 'var(--red)',    day: '20', month: 'JUN', name: 'Final Submission',    sub: '🎯 Main deadline'  },
-];
-
 const QUICK_ACTIONS = [
-  { icon: '＋', label: 'Add Task'    },
-  { icon: '💬', label: 'Open Chat'   },
-  { icon: '↑',  label: 'Upload File' },
+  { icon: '＋', label: 'Add Task',    page: 'tasks' },
+  { icon: '💬', label: 'Open Chat',   page: 'chat'  },
+  { icon: '↑',  label: 'Upload File', page: 'files' },
 ];
 
 
 type CardData = { borderColor: string; tag: string; tagCls: string; title: string; body: string; by: string };
 
-const TYPE_TO_CARD: Record<PinnedItem['type'], { borderColor: string; tagCls: string }> = {
-  red:   { borderColor: 'var(--red)',   tagCls: 'bg-[var(--red-light)]   text-[var(--red)]'   },
-  blue:  { borderColor: 'var(--blue)',  tagCls: 'bg-[var(--blue-light)]  text-[var(--blue)]'  },
-  green: { borderColor: 'var(--green)', tagCls: 'bg-[var(--green-light)] text-[var(--green)]' },
-  amber: { borderColor: 'var(--amber)', tagCls: 'bg-[var(--amber-light)] text-[var(--amber)]' },
+const CATEGORY_TO_CARD: Record<string, { borderColor: string; tagCls: string }> = {
+  CRITICAL:     { borderColor: 'var(--red)',    tagCls: 'bg-[var(--red-light)]    text-[var(--red)]'    },
+  INSTRUCTIONS: { borderColor: 'var(--blue)',   tagCls: 'bg-[var(--blue-light)]   text-[var(--blue)]'   },
+  RESOURCES:    { borderColor: 'var(--green)',  tagCls: 'bg-[var(--green-light)]  text-[var(--green)]'  },
+  DECISION:     { borderColor: 'var(--amber)',  tagCls: 'bg-[var(--amber-light)]  text-[var(--amber)]'  },
+  ANNOUNCEMENT: { borderColor: 'var(--accent)', tagCls: 'bg-[var(--accent-light)] text-[var(--accent)]' },
 };
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const formatMeetingDate = (dateStr: string) => {
+  const d = new Date(dateStr)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+    ' · ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+}
+
+const getInitials = (name: string) =>
+  name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?'
+
+const avatarColor = (name: string) => {
+  const colors = ['#D4500A', '#2563EB', '#16A34A', '#7C3AED', '#D97706']
+  return colors[(name?.charCodeAt(0) || 0) % colors.length]
+}
 
 // ─── Style maps ───────────────────────────────────────────────────────────────
 const PRIORITY_CLS: Record<Priority, string> = {
@@ -96,20 +121,60 @@ function PinnedCard({ card }: { card: CardData }) {
   );
 }
 
+// ─── Empty state ─────────────────────────────────────────────────────────────
+function EmptyState({ message }: { message: string }) {
+  return (
+    <div style={{ padding: '28px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+      {message}
+    </div>
+  );
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 export default function DashboardPage({ onNavigate }: { onNavigate?: (page: string) => void }) {
-  const [selectedFile, setSelectedFile] = useState<ModalFile | null>(null);
-  const { meetings } = useMeetingsStore();
-  const { tasks }    = useTasksStore();
-  const { files }    = useFilesStore();
-  const { items }    = useImportantStore();
-  const pinnedItems  = items.filter(i => i.pinned).slice(0, 4);
+  const [selectedFile,       setSelectedFile]       = useState<ModalFile | null>(null);
+  const [showAddMilestone,   setShowAddMilestone]   = useState(false);
+  const [milestoneTitle,     setMilestoneTitle]     = useState('');
+  const [milestoneDesc,      setMilestoneDesc]      = useState('');
+  const [milestoneDueDate,   setMilestoneDueDate]   = useState('');
+  const [milestoneSubmitting, setMilestoneSubmitting] = useState(false);
 
-  const activeTasks = [
-    ...tasks.filter(p => p.status === 'IN_PROGRESS'),
-    ...tasks.filter(p => p.status === 'TODO'),
-  ].flatMap(p => p.subtasks.filter(s => !s.done).map(s => ({ subtask: s, parent: p })))
-   .slice(0, 4);
+  const { meetings }         = useMeetingsStore();
+  const { tasks }            = useTasksStore();
+  const { files }            = useFilesStore();
+  const { items }            = useImportantStore();
+  const { user, currentWorkspace } = useAuthStore();
+  const { milestones, addMilestone, deleteMilestone } = useMilestonesStore();
+  const pinnedItems          = items.filter(i => i.pinned).slice(0, 4);
+
+  const upcoming = milestones
+    .filter(m => m.status !== 'COMPLETED')
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+    .slice(0, 5);
+
+  async function handleAddMilestone() {
+    if (!milestoneTitle.trim() || !milestoneDueDate || !currentWorkspace) return;
+    setMilestoneSubmitting(true);
+    await addMilestone(currentWorkspace.id, {
+      title:       milestoneTitle.trim(),
+      description: milestoneDesc.trim() || undefined,
+      dueDate:     milestoneDueDate,
+    });
+    setMilestoneTitle('');
+    setMilestoneDesc('');
+    setMilestoneDueDate('');
+    setMilestoneSubmitting(false);
+    setShowAddMilestone(false);
+  }
+
+  const hour     = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const firstName = user?.name?.split(' ')[0] ?? 'there';
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const allSubtasks = tasks.flatMap(t =>
+    t.subtasks.map((s: any) => ({ ...s, parentTitle: t.title, priority: t.priority }))
+  ).filter((s: any) => !s.done).slice(0, 4);
 
   return (
     <div className="max-w-[1080px] mx-auto px-10 pt-10 pb-20">
@@ -120,10 +185,10 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: stri
           className="text-[28px] tracking-[-0.5px] text-[var(--text-primary)] leading-tight"
           style={{ fontFamily: 'var(--font-display)' }}
         >
-          Good morning, Sara 👋
+          {greeting}, {firstName} 👋
         </h1>
         <p className="text-sm text-[var(--text-secondary)] mt-1">
-          AI-Based Graduation System&nbsp;&nbsp;·&nbsp;&nbsp;CS 2025&nbsp;&nbsp;·&nbsp;&nbsp;Dr. Khalid Al-Rashidi
+          {currentWorkspace?.name ?? 'Your Workspace'}
         </p>
       </div>
 
@@ -132,6 +197,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: stri
         {QUICK_ACTIONS.map((a) => (
           <button
             key={a.label}
+            onClick={() => onNavigate?.(a.page)}
             className="flex items-center gap-2 border border-[var(--border)] rounded-lg py-[9px] px-[18px] text-[13px] font-semibold text-[var(--text-secondary)] bg-[var(--surface)] hover:border-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--accent-light)] cursor-pointer [transition:var(--transition)]"
           >
             <span>{a.icon}</span>
@@ -157,6 +223,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: stri
             }
           />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {meetings.length === 0 && <EmptyState message="No meetings yet" />}
             {meetings.slice(0, 4).map(meeting => (
               <div
                 key={meeting.id}
@@ -177,7 +244,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: stri
                   {meeting.title}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
-                  📅 {meeting.date} &nbsp;·&nbsp; {meeting.time}
+                  📅 {formatMeetingDate(meeting.date)}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                   📍 Online
@@ -189,24 +256,54 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: stri
 
         {/* Top-right — Upcoming Deadlines */}
         <Card className="min-h-[280px]">
-          <CardHeader title="Upcoming Deadlines" />
-          <div className="flex flex-col gap-3.5">
-            {DEADLINES.map((d) => (
-              <div key={d.name} className="flex items-center gap-3">
+          <CardHeader
+            title="Upcoming Deadlines"
+            action={
+              <button
+                onClick={() => setShowAddMilestone(true)}
+                className="text-[12px] font-semibold text-[var(--accent)] bg-transparent border-none cursor-pointer p-0"
+              >
+                + Add
+              </button>
+            }
+          />
+          <div className="flex flex-col gap-2">
+            {upcoming.length === 0 && <EmptyState message="No upcoming deadlines" />}
+            {upcoming.map(m => {
+              const { label: dLabel, urgent } = daysUntil(m.dueDate);
+              return (
                 <div
-                  className="shrink-0"
-                  style={{ width: 5, height: 36, background: d.color, borderRadius: 3 }}
-                />
-                <div className="shrink-0 w-[44px]">
-                  <div className="text-[18px] font-bold text-[var(--text-primary)] leading-none">{d.day}</div>
-                  <div className="text-[10px] font-medium text-[var(--text-muted)] uppercase tracking-wide mt-0.5">{d.month}</div>
+                  key={m.id}
+                  className="flex items-start gap-2.5 py-2 border-b border-[var(--border)] last:border-b-0 group"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[13px] font-semibold text-[var(--text-primary)] truncate">
+                        {m.title}
+                      </span>
+                      <span className={clsx('shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold', STATUS_CLS[m.status])}>
+                        {STATUS_LABEL[m.status]}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[11px] text-[var(--text-muted)]">
+                        {new Date(m.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                      <span className={clsx('text-[11px] font-semibold', urgent ? 'text-[var(--red)]' : 'text-[var(--text-muted)]')}>
+                        · {dLabel}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => currentWorkspace && deleteMilestone(currentWorkspace.id, m.id)}
+                    className="shrink-0 opacity-0 group-hover:opacity-100 text-[var(--text-muted)] hover:text-[var(--red)] text-[14px] bg-transparent border-none cursor-pointer p-0 leading-none transition-opacity duration-150"
+                    title="Delete"
+                  >
+                    ×
+                  </button>
                 </div>
-                <div className="flex flex-col min-w-0">
-                  <span className="text-[13px] font-semibold text-[var(--text-primary)] truncate">{d.name}</span>
-                  <span className="text-[11px] text-[var(--text-muted)]">{d.sub}</span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
 
@@ -215,30 +312,36 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: stri
           <CardHeader
             title="Current Tasks"
             action={
-              <button className="text-[12px] text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors duration-150">
+              <button onClick={() => onNavigate?.('tasks')} className="text-[12px] text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors duration-150">
                 View All →
               </button>
             }
           />
           <div className="flex flex-col gap-3">
-            {activeTasks.map(({ subtask, parent }) => (
-              <div key={subtask.id} className="flex items-center gap-2.5">
+            {allSubtasks.length === 0 && <EmptyState message="No tasks yet" />}
+            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+            {allSubtasks.map((s: any) => (
+              <div key={s.id} className="flex items-center gap-2.5">
                 <div className="shrink-0 w-[18px] h-[18px] rounded-full border-2 border-[var(--border-strong)]" />
                 <span className="flex-1 min-w-0 text-[13.5px] font-medium text-[var(--text-primary)] truncate">
-                  {subtask.title}
+                  {s.title}
                 </span>
-                <span className="shrink-0 text-[11px] text-[var(--text-muted)]">Due {subtask.dueDate}</span>
+                {s.dueDate && (
+                  <span className="shrink-0 text-[11px] text-[var(--text-muted)]">
+                    Due {new Date(s.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </span>
+                )}
                 <span className={clsx(
                   'shrink-0 px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize',
-                  PRIORITY_CLS[parent.priority],
+                  PRIORITY_CLS[s.priority as Priority],
                 )}>
-                  {parent.priority}
+                  {s.priority.toLowerCase()}
                 </span>
                 <div
-                  className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-                  style={{ background: TASK_MEMBERS[subtask.assigneeId ?? ''] ?? '#888' }}
+                  className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold"
+                  style={{ background: avatarColor(s.assignee?.name ?? ''), color: 'white' }}
                 >
-                  {subtask.assigneeId}
+                  {getInitials(s.assignee?.name ?? '')}
                 </div>
               </div>
             ))}
@@ -256,6 +359,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: stri
             }
           />
           <div>
+            {files.length === 0 && <EmptyState message="No files yet" />}
             {files.slice(0, 6).map((file) => {
               const icon = FILE_ICON[file.type as 'pdf' | 'docx' | 'pptx'] ?? { bg: '#F3F4F6', emoji: '📎' };
               return (
@@ -300,8 +404,13 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: stri
           </p>
         </div>
         <div className="grid grid-cols-2 gap-[14px]">
+          {pinnedItems.length === 0 && (
+            <div className="col-span-2">
+              <EmptyState message="No pinned items yet" />
+            </div>
+          )}
           {pinnedItems.map(item => {
-            const s = TYPE_TO_CARD[item.type];
+            const s = CATEGORY_TO_CARD[item.category] ?? CATEGORY_TO_CARD.INSTRUCTIONS;
             return (
               <PinnedCard
                 key={item.id}
@@ -311,7 +420,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: stri
                   tag:         item.category,
                   title:       item.title,
                   body:        item.body,
-                  by:          `${item.by} · ${item.date}`,
+                  by:          `${item.addedBy?.name ?? 'Unknown'} · ${item.date}`,
                 }}
               />
             );
@@ -321,6 +430,85 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: stri
 
       {/* File preview modal */}
       <PreviewModal file={selectedFile} onClose={() => setSelectedFile(null)} />
+
+      {/* Add Milestone modal */}
+      {showAddMilestone && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowAddMilestone(false); }}
+        >
+          <div
+            className="bg-[var(--surface)] border border-[var(--border)] rounded-[var(--radius-lg)] p-6 w-full max-w-[420px] shadow-[var(--shadow-lg)]"
+            style={{ boxSizing: 'border-box' }}
+          >
+            <h3 className="text-[17px] font-bold text-[var(--text-primary)] mb-4">
+              Add Deadline
+            </h3>
+
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className="text-[12px] font-semibold text-[var(--text-secondary)] block mb-1">
+                  Title *
+                </label>
+                <input
+                  autoFocus
+                  value={milestoneTitle}
+                  onChange={e => setMilestoneTitle(e.target.value)}
+                  placeholder="e.g. Submit final report"
+                  className="w-full border border-[var(--border)] rounded-[var(--radius-sm)] px-3 py-2 text-[13px] text-[var(--text-primary)] bg-[var(--bg)] outline-none focus:border-[var(--accent)]"
+                  style={{ transition: 'var(--transition)' }}
+                  onKeyDown={e => e.key === 'Enter' && handleAddMilestone()}
+                />
+              </div>
+
+              <div>
+                <label className="text-[12px] font-semibold text-[var(--text-secondary)] block mb-1">
+                  Description
+                </label>
+                <input
+                  value={milestoneDesc}
+                  onChange={e => setMilestoneDesc(e.target.value)}
+                  placeholder="Optional details"
+                  className="w-full border border-[var(--border)] rounded-[var(--radius-sm)] px-3 py-2 text-[13px] text-[var(--text-primary)] bg-[var(--bg)] outline-none focus:border-[var(--accent)]"
+                  style={{ transition: 'var(--transition)' }}
+                />
+              </div>
+
+              <div>
+                <label className="text-[12px] font-semibold text-[var(--text-secondary)] block mb-1">
+                  Due Date *
+                </label>
+                <input
+                  type="date"
+                  value={milestoneDueDate}
+                  onChange={e => setMilestoneDueDate(e.target.value)}
+                  className="w-full border border-[var(--border)] rounded-[var(--radius-sm)] px-3 py-2 text-[13px] text-[var(--text-primary)] bg-[var(--bg)] outline-none focus:border-[var(--accent)]"
+                  style={{ transition: 'var(--transition)' }}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => setShowAddMilestone(false)}
+                className="flex-1 border border-[var(--border)] rounded-[var(--radius-sm)] py-2 text-[13px] font-semibold text-[var(--text-secondary)] bg-transparent cursor-pointer hover:bg-[var(--bg)]"
+                style={{ transition: 'var(--transition)' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddMilestone}
+                disabled={!milestoneTitle.trim() || !milestoneDueDate || milestoneSubmitting}
+                className="flex-1 rounded-[var(--radius-sm)] py-2 text-[13px] font-semibold text-white border-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: 'var(--accent)', transition: 'var(--transition)' }}
+              >
+                {milestoneSubmitting ? 'Adding…' : 'Add Deadline'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

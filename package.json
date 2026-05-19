@@ -10,6 +10,7 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "@supabase/supabase-js": "^2.105.4",
     "@tanstack/react-query": "^5.100.9",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
@@ -20,6 +21,7 @@
     "prisma": "^7.8.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "resend": "^6.12.3",
     "zustand": "^5.0.13"
   },
   "devDependencies": {
