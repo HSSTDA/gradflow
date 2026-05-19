@@ -27,7 +27,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ work
 
     return NextResponse.json({
       success: true,
-      data: { members: members.map(m => ({ ...m.user, role: m.role })) }
+      data: { members: members.map(m => ({ ...m.user, role: m.role })) },
+    }, {
+      headers: { 'Cache-Control': 's-maxage=300, stale-while-revalidate=900' },
     })
   } catch (err) {
     console.error(err)

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import clsx from 'clsx';
 import Toast from '@/components/ui/Toast';
+import SkeletonLoader from '@/components/ui/SkeletonLoader';
 import { useTasksStore } from '@/store/tasksStore';
 import { useAuthStore } from '@/store/authStore';
 import { api } from '@/lib/api';
@@ -781,7 +782,7 @@ function CalendarView({
 
 // ─── TasksPage ────────────────────────────────────────────────────────────────
 export default function TasksPage() {
-  const { tasks, fetchTasks } = useTasksStore();
+  const { tasks, isLoading: tasksLoading, fetchTasks } = useTasksStore();
   const { currentWorkspace, user } = useAuthStore();
   const currentUser = user;
   const workspaceId = currentWorkspace?.id;
@@ -1089,13 +1090,20 @@ export default function TasksPage() {
         </div>
       </div>
 
+      {/* Loading skeleton */}
+      {tasksLoading && (
+        <div style={{ marginTop: 24 }}>
+          <SkeletonLoader rows={4} height={72} />
+        </div>
+      )}
+
       {/* Task groups panel — shown above kanban and list */}
-      {(viewMode === 'kanban' || viewMode === 'list') && (
+      {!tasksLoading && (viewMode === 'kanban' || viewMode === 'list') && (
         <ParentTasksPanel tasks={tasks} onEdit={handleEdit} onDelete={handleDeleteTask} />
       )}
 
       {/* ── Kanban ─────────────────────────────────────────────── */}
-      {viewMode === 'kanban' && (
+      {!tasksLoading && viewMode === 'kanban' && (
         <div className="flex gap-4 overflow-x-auto pb-2">
           {COLUMNS.map(col => {
             const colItems = columnItems[col.id];
@@ -1143,7 +1151,7 @@ export default function TasksPage() {
       )}
 
       {/* ── List ───────────────────────────────────────────────── */}
-      {viewMode === 'list' && (
+      {!tasksLoading && viewMode === 'list' && (
         <div>
           <div className="grid px-4 pb-2 mb-0.5" style={{ gridTemplateColumns: '1fr 160px 90px 140px 30px' }}>
             <span className="text-[11px] font-semibold text-[var(--text-muted)] uppercase tracking-wide">To-do</span>
@@ -1252,7 +1260,7 @@ export default function TasksPage() {
       )}
 
       {/* ── Calendar ───────────────────────────────────────────── */}
-      {viewMode === 'calendar' && (
+      {!tasksLoading && viewMode === 'calendar' && (
         <CalendarView
           items={calendarItems}
           getSubtaskStatus={getSubtaskStatus}

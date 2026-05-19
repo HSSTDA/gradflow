@@ -15,7 +15,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ work
         triggeredBy: { select: { id: true, name: true, avatarUrl: true } },
       },
       orderBy: { createdAt: 'desc' },
-      take: 50,
+      take: 20,
     })
 
     const unreadCount = notifications.filter(n => !n.read).length

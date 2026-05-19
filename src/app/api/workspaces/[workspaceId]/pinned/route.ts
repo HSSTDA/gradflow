@@ -31,7 +31,9 @@ export async function GET(
     })
 
     const items = raw.map(item => ({ ...item, date: formatDate(item.createdAt) }))
-    return NextResponse.json({ success: true, data: { items } })
+    return NextResponse.json({ success: true, data: { items } }, {
+      headers: { 'Cache-Control': 's-maxage=120, stale-while-revalidate=600' },
+    })
   } catch {
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }

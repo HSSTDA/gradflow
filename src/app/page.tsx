@@ -48,21 +48,27 @@ export default function Home() {
 
   useEffect(() => {
     if (!currentWorkspace) return
-    fetchTasks(currentWorkspace.id)
-    fetchMeetings(currentWorkspace.id)
-    fetchFiles(currentWorkspace.id)
-    fetchItems(currentWorkspace.id)
-    fetchMilestones(currentWorkspace.id)
+    const id = currentWorkspace.id
+    Promise.all([
+      fetchTasks(id),
+      fetchMeetings(id),
+      fetchFiles(id),
+      fetchMilestones(id),
+      fetchItems(id),
+    ]).catch(console.error)
   }, [currentWorkspace?.id])
 
   useEffect(() => {
     const handleFocus = () => {
       if (!currentWorkspace?.id) return
-      fetchTasks(currentWorkspace.id)
-      fetchMeetings(currentWorkspace.id)
-      fetchFiles(currentWorkspace.id)
-      fetchItems(currentWorkspace.id)
-      fetchMilestones(currentWorkspace.id)
+      const id = currentWorkspace.id
+      Promise.all([
+        fetchTasks(id),
+        fetchMeetings(id),
+        fetchFiles(id),
+        fetchMilestones(id),
+        fetchItems(id),
+      ]).catch(console.error)
     }
     window.addEventListener('focus', handleFocus)
     return () => window.removeEventListener('focus', handleFocus)

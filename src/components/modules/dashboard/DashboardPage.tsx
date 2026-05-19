@@ -6,6 +6,7 @@ import PreviewModal, { FILE_ICON, type ModalFile } from '@/components/ui/Preview
 import { useMeetingsStore } from '@/store/meetingsStore';
 import { useTasksStore } from '@/store/tasksStore';
 import { useFilesStore } from '@/store/filesStore';
+import SkeletonLoader from '@/components/ui/SkeletonLoader';
 import { useImportantStore, type PinnedItem } from '@/store/importantStore';
 import { useAuthStore } from '@/store/authStore';
 import { useMilestonesStore, type Milestone } from '@/store/milestonesStore';
@@ -139,9 +140,9 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: stri
   const [milestoneDueDate,   setMilestoneDueDate]   = useState('');
   const [milestoneSubmitting, setMilestoneSubmitting] = useState(false);
 
-  const { meetings }         = useMeetingsStore();
-  const { tasks }            = useTasksStore();
-  const { files }            = useFilesStore();
+  const { meetings, isLoading: meetingsLoading } = useMeetingsStore();
+  const { tasks,    isLoading: tasksLoading    } = useTasksStore();
+  const { files,    isLoading: filesLoading    } = useFilesStore();
   const { items }            = useImportantStore();
   const { user, currentWorkspace } = useAuthStore();
   const { milestones, addMilestone, deleteMilestone } = useMilestonesStore();
@@ -223,8 +224,9 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: stri
             }
           />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {meetings.length === 0 && <EmptyState message="No meetings yet" />}
-            {meetings.slice(0, 4).map(meeting => (
+            {meetingsLoading && <SkeletonLoader rows={3} height={62} />}
+            {!meetingsLoading && meetings.length === 0 && <EmptyState message="No meetings yet" />}
+            {!meetingsLoading && meetings.slice(0, 4).map(meeting => (
               <div
                 key={meeting.id}
                 onClick={() => onNavigate?.('meetings')}
@@ -318,9 +320,10 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: stri
             }
           />
           <div className="flex flex-col gap-3">
-            {allSubtasks.length === 0 && <EmptyState message="No tasks yet" />}
+            {tasksLoading && <SkeletonLoader rows={3} height={32} />}
+            {!tasksLoading && allSubtasks.length === 0 && <EmptyState message="No tasks yet" />}
             {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            {allSubtasks.map((s: any) => (
+            {!tasksLoading && allSubtasks.map((s: any) => (
               <div key={s.id} className="flex items-center gap-2.5">
                 <div className="shrink-0 w-[18px] h-[18px] rounded-full border-2 border-[var(--border-strong)]" />
                 <span className="flex-1 min-w-0 text-[13.5px] font-medium text-[var(--text-primary)] truncate">
@@ -359,8 +362,9 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: stri
             }
           />
           <div>
-            {files.length === 0 && <EmptyState message="No files yet" />}
-            {files.slice(0, 6).map((file) => {
+            {filesLoading && <SkeletonLoader rows={3} height={44} />}
+            {!filesLoading && files.length === 0 && <EmptyState message="No files yet" />}
+            {!filesLoading && files.slice(0, 6).map((file) => {
               const icon = FILE_ICON[file.type as 'pdf' | 'docx' | 'pptx'] ?? { bg: '#F3F4F6', emoji: '📎' };
               return (
                 <div

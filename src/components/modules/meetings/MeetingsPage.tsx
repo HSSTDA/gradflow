@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useMeetingsStore } from '@/store/meetingsStore';
+import SkeletonLoader from '@/components/ui/SkeletonLoader';
 import { useAuthStore } from '@/store/authStore';
 import { api } from '@/lib/api';
 import { createNotification } from '@/lib/notify';
@@ -412,11 +413,7 @@ export default function MeetingsPage() {
 
       {/* ── Cards ── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {isLoading && (
-          <div style={{ textAlign: 'center', padding: '60px 0', fontSize: 13, color: 'var(--text-muted)' }}>
-            Loading…
-          </div>
-        )}
+        {isLoading && <SkeletonLoader rows={3} height={80} />}
 
         {!isLoading && meetings.length === 0 && (
           <div style={{ textAlign: 'center', padding: '60px 0', fontSize: 13, color: 'var(--text-muted)' }}>

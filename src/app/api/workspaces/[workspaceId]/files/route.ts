@@ -22,10 +22,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ work
     const files = await prisma.file.findMany({
       where: { workspaceId, ...(folder && folder !== 'All Files' && { folder }) },
       include: { uploader: { select: { id: true, name: true, avatarUrl: true } } },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      take: 20,
     })
 
-    return NextResponse.json({ success: true, data: { files } })
+    return NextResponse.json({ success: true, data: { files } }, {
+      headers: { 'Cache-Control': 's-maxage=60, stale-while-revalidate=300' },
+    })
   } catch (err) {
     console.error(err)
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })

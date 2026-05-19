@@ -21,15 +21,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ work
     const tasks = await prisma.task.findMany({
       where: { workspaceId },
       include: {
-        createdBy: { select: { id: true, name: true, avatarUrl: true } },
+        createdBy: { select: { id: true, name: true } },
         subtasks: {
-          include: {
+          select: {
+            id: true,
+            title: true,
+            done: true,
+            dueDate: true,
+            note: true,
+            assigneeId: true,
+            dependsOnId: true,
             assignee: { select: { id: true, name: true, avatarUrl: true } },
-            dependsOn: { select: { id: true, title: true, done: true } }
-          }
-        }
+            dependsOn: { select: { id: true, title: true, done: true } },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+        _count: { select: { subtasks: true } },
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     })
 
     return NextResponse.json({ success: true, data: { tasks } })

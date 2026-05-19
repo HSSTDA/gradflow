@@ -21,11 +21,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ work
     const meetings = await prisma.meeting.findMany({
       where: { workspaceId },
       include: {
-        attendees: { include: { user: { select: { id: true, name: true, avatarUrl: true } } } },
-        notes: true,
-        actions: { include: { assignee: { select: { id: true, name: true, avatarUrl: true } } } }
+        attendees: {
+          select: { user: { select: { id: true, name: true, avatarUrl: true } } },
+        },
+        notes: { select: { id: true, text: true } },
+        actions: {
+          select: {
+            id: true, text: true, done: true, assigneeId: true,
+            assignee: { select: { id: true, name: true, avatarUrl: true } },
+          },
+        },
       },
-      orderBy: { date: 'desc' }
+      orderBy: { date: 'desc' },
     })
 
     return NextResponse.json({ success: true, data: { meetings } })

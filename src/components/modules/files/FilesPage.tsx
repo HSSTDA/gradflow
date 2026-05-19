@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useFilesStore, type FileItem } from '@/store/filesStore';
+import SkeletonLoader from '@/components/ui/SkeletonLoader';
 import { useAuthStore } from '@/store/authStore';
 import { getSupabase } from '@/lib/supabase';
 
@@ -165,12 +166,13 @@ function FolderBtn({
 export default function FilesPage() {
   // Requires Supabase Storage bucket "gradflow-files" to allow authenticated uploads
   // Dashboard → Storage → gradflow-files → Policies → New Policy → Allow insert for authenticated users
-  const { files, fetchFiles, deleteFile } = useFilesStore();
+  const { files, isLoading: filesLoading, fetchFiles, deleteFile } = useFilesStore();
   const workspaceId = useAuthStore(s => s.currentWorkspace?.id);
   const token       = useAuthStore(s => s.token);
   const [activeFolder,   setActiveFolder]   = useState('All Files');
   const [viewMode,       setViewMode]       = useState<ViewMode>('list');
   const [searchQuery,    setSearchQuery]    = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [previewIndex,   setPreviewIndex]   = useState(-1);
   const [hoveredFileId,  setHoveredFileId]  = useState<string | null>(null);
   const [uploading,      setUploading]      = useState(false);
@@ -181,6 +183,11 @@ export default function FilesPage() {
   const [folderError,    setFolderError]    = useState('');
   const fileInputRef      = useRef<HTMLInputElement>(null);
   const folderInputRef    = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(searchQuery), 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
 
   const handleUpload = async (file: File) => {
     if (!workspaceId || !token) return;
@@ -267,8 +274,8 @@ export default function FilesPage() {
       activeFolder === 'All Files' ? true :
       activeFolder === 'recent'    ? (!!file.date && file.date.startsWith('May') && parseInt(file.date.split(' ')[1]) >= 5) :
       file.folder === activeFolder;
-    const matchesSearch = !searchQuery.trim() ||
-      file.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = !debouncedQuery.trim() ||
+      file.name.toLowerCase().includes(debouncedQuery.toLowerCase());
     return matchesFolder && matchesSearch;
   });
 
@@ -517,8 +524,15 @@ export default function FilesPage() {
           {/* Scrollable file area */}
           <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg)' }}>
 
+            {/* ─── Loading skeleton ───────────────────────────── */}
+            {filesLoading && (
+              <div style={{ padding: '16px 24px' }}>
+                <SkeletonLoader rows={5} height={48} />
+              </div>
+            )}
+
             {/* ─── List view ─────────────────────────────────── */}
-            {viewMode === 'list' && filteredFiles.map(file => {
+            {!filesLoading && viewMode === 'list' && filteredFiles.map(file => {
               const icon    = FILE_ICON[file.type] ?? { bg: '#F3F4F6', emoji: '📎' };
               const hovered = hoveredFileId === file.id;
               return (
@@ -595,7 +609,7 @@ export default function FilesPage() {
             })}
 
             {/* ─── Grid view ─────────────────────────────────── */}
-            {viewMode === 'grid' && (
+            {!filesLoading && viewMode === 'grid' && (
               <div style={{
                 display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
                 gap: 14, padding: 24,
@@ -696,7 +710,7 @@ export default function FilesPage() {
               </div>
             )}
 
-            {filteredFiles.length === 0 && (
+            {!filesLoading && filteredFiles.length === 0 && (
               <div style={{
                 textAlign: 'center', padding: '80px 24px',
                 fontSize: 13, color: 'var(--text-muted)',
