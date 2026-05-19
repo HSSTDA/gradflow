@@ -18,7 +18,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ work
       take: 20,
     })
 
-    const unreadCount = notifications.filter(n => !n.read).length
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const unreadCount = notifications.filter((n: any) => !n.read).length
 
     return NextResponse.json({ success: true, data: { notifications, unreadCount } })
   } catch (err: unknown) {
