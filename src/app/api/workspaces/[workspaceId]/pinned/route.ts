@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { validate } from '@/lib/validate'
 
 const getUser = (req: NextRequest) => {
   const token = req.headers.get('authorization')?.split(' ')[1]
@@ -55,8 +56,11 @@ export async function POST(
       )
     }
 
+    const safeTitle = validate.text(title, 200)
+    const safeBody  = validate.text(body, 5000)
+
     const raw = await prisma.pinnedItem.create({
-      data: { title: title.trim(), body: body.trim(), category, workspaceId, addedById: userId },
+      data: { title: safeTitle, body: safeBody, category, workspaceId, addedById: userId },
       include: { addedBy: { select: { id: true, name: true, avatarUrl: true } } },
     })
 

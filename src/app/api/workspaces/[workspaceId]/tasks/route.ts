@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { validate } from '@/lib/validate'
 
 const getUser = (req: NextRequest) => {
   const token = req.headers.get('authorization')?.split(' ')[1]
@@ -57,8 +58,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ wor
     if (!title?.trim())
       return NextResponse.json({ success: false, error: 'Title required' }, { status: 400 })
 
+    const safeTitle = validate.text(title, 200)
+
     const task = await prisma.task.create({
-      data: { title: title.trim(), priority, status, workspaceId, createdById: userId },
+      data: { title: safeTitle, priority, status, workspaceId, createdById: userId },
       include: {
         createdBy: { select: { id: true, name: true, avatarUrl: true } },
         subtasks: true

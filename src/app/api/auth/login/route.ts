@@ -2,8 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 import { signToken } from '@/lib/auth'
+import { rateLimit } from '@/lib/rateLimit'
 
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get('x-forwarded-for') || 'unknown'
+  if (!rateLimit(`login:${ip}`, 10, 60000)) {
+    return NextResponse.json(
+      { success: false, error: 'Too many login attempts. Please try again later.' },
+      { status: 429 }
+    )
+  }
+
   try {
     const { email, password } = await req.json()
 
@@ -27,6 +36,7 @@ export async function POST(req: NextRequest) {
       }
     })
   } catch (error) {
+    console.error(error)
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 }

@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { sendEmail } from '@/lib/email'
 import { taskDoneEmail, taskAssignedEmail, mentionEmail, meetingEmail } from '@/lib/emailTemplates'
+import { rateLimit } from '@/lib/rateLimit'
 
 export async function POST(req: NextRequest) {
   try {
     const { userId, workspaceId, type, title, body, triggeredById } = await req.json()
+
+    if (!rateLimit(`notif:${userId}`, 30, 60000)) {
+      return NextResponse.json({ success: false, error: 'Rate limit exceeded' }, { status: 429 })
+    }
 
     const notification = await prisma.notification.create({
       data: { userId, workspaceId, type, title, body, triggeredById: triggeredById || null },

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { validate } from '@/lib/validate'
 
 const getUser = (req: NextRequest) => {
   const token = req.headers.get('authorization')?.split(' ')[1]
@@ -38,13 +39,16 @@ export async function POST(req: NextRequest) {
     const { userId } = getUser(req)
     const { name, description } = await req.json()
 
-    if (!name?.trim())
-      return NextResponse.json({ success: false, error: 'Name required' }, { status: 400 })
+    const nameError = validate.workspaceName(name ?? '')
+    if (nameError)
+      return NextResponse.json({ success: false, error: nameError }, { status: 400 })
+
+    const safeName = validate.text(name, 100)
 
     const workspace = await prisma.workspace.create({
       data: {
-        name: name.trim(),
-        slug: generateSlug(name),
+        name: safeName,
+        slug: generateSlug(safeName),
         description: description?.trim() || null,
         ownerId: userId,
         members: { create: { userId, role: 'OWNER' } }

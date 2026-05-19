@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyToken } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { validate } from '@/lib/validate'
 
 const getUser = (req: NextRequest) => {
   const token = req.headers.get('authorization')?.split(' ')[1]
@@ -41,8 +42,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ wor
     if (!text?.trim())
       return NextResponse.json({ success: false, error: 'Text required' }, { status: 400 })
 
+    const safeText = validate.text(text, 5000)
+
     const message = await prisma.message.create({
-      data: { text: text.trim(), workspaceId, senderId: userId, receiverId: receiverId || null },
+      data: { text: safeText, workspaceId, senderId: userId, receiverId: receiverId || null },
       include: { sender: { select: { id: true, name: true, avatarUrl: true } } }
     })
 
