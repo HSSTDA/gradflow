@@ -27,7 +27,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ work
 
     return NextResponse.json({
       success: true,
-      data: { members: members.map(m => ({ ...m.user, role: m.role })) },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      data: { members: members.map((m: any) => ({ ...m.user, role: m.role })) },
     }, {
       headers: { 'Cache-Control': 's-maxage=300, stale-while-revalidate=900' },
     })
