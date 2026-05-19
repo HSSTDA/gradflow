@@ -4,7 +4,12 @@ const nextConfig: NextConfig = {
   output: 'standalone',
 
   images: {
-    domains: ['cwlrxpwsrlrvisaxxovf.supabase.co'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'cwlrxpwsrlrvisaxxovf.supabase.co',
+      },
+    ],
   },
 
   async headers() {
