@@ -70,6 +70,7 @@ model User {
   meetingAttendees       MeetingAttendee[]
   notifications          Notification[]    @relation("NotificationReceiver")
   triggeredNotifications Notification[]    @relation("TriggeredNotifications")
+  createdInvites         WorkspaceInvite[] @relation("InviteCreator")
 
   @@map("users")
 }
@@ -86,6 +87,7 @@ model Workspace {
 
   owner         User              @relation("WorkspaceOwner", fields: [ownerId], references: [id])
   members       WorkspaceMember[]
+  invites       WorkspaceInvite[]
   tasks         Task[]
   files         File[]
   meetings      Meeting[]
@@ -109,6 +111,23 @@ model WorkspaceMember {
 
   @@unique([workspaceId, userId])
   @@map("workspace_members")
+}
+
+model WorkspaceInvite {
+  id          String    @id @default(cuid())
+  token       String    @unique
+  email       String
+  workspaceId String
+  role        Role      @default(MEMBER)
+  createdById String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User      @relation("InviteCreator", fields: [createdById], references: [id])
+
+  @@map("workspace_invites")
 }
 
 // ─── Tasks ────────────────────────────────────────────────────────────────────

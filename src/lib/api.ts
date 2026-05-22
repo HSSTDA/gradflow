@@ -44,12 +44,22 @@ export const api = {
     create: (body: { name: string; description?: string }) =>
       apiFetch('/api/workspaces', { method: 'POST', body: JSON.stringify(body) }),
     get: (id: string) => apiFetch(`/api/workspaces/${id}`),
-    invite: (id: string, body: { email: string; role?: string }) =>
-      apiFetch(`/api/workspaces/${id}/invite`, { method: 'POST', body: JSON.stringify(body) }),
     members: (workspaceId: string) =>
       apiFetch(`/api/workspaces/${workspaceId}/members`),
     removeMember: (workspaceId: string, userId: string) =>
       apiFetch(`/api/workspaces/${workspaceId}/members/${userId}`, { method: 'DELETE' }),
+  },
+
+  invitations: {
+    list: (workspaceId: string) =>
+      apiFetch(`/api/workspaces/${workspaceId}/invitations`),
+    create: (workspaceId: string, body: { email: string; role?: string }) =>
+      apiFetch(`/api/workspaces/${workspaceId}/invitations`, { method: 'POST', body: JSON.stringify(body) }),
+  },
+
+  invites: {
+    get: (token: string) => apiFetch(`/api/invite/${token}`),
+    accept: (token: string) => apiFetch(`/api/invite/${token}/accept`, { method: 'POST' }),
   },
 
   tasks: {
