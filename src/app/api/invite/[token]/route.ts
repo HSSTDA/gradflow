@@ -7,7 +7,7 @@ export async function GET(
 ) {
   try {
     const { token } = await params
-    console.log('[invite GET] looking up token:', token)
+    console.log('[INVITE LOOKUP] token:', token)
 
     const invite = await prisma.workspaceInvite.findUnique({
       where: { token },
@@ -16,9 +16,7 @@ export async function GET(
         createdBy: { select: { name: true } },
       },
     })
-    console.log('[invite GET] prisma result:', invite
-      ? { id: invite.id, email: invite.email, usedAt: invite.usedAt, expiresAt: invite.expiresAt }
-      : null)
+    console.log('[INVITE LOOKUP] result:', invite)
 
     if (!invite) {
       return NextResponse.json({ success: false, error: 'Invitation not found' }, { status: 404 })
@@ -44,7 +42,7 @@ export async function GET(
     })
   } catch (err: unknown) {
     const e = err as { message?: string }
-    console.error('[invite GET] error:', e.message)
+    console.error('[INVITE LOOKUP] error:', e.message)
     return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
   }
 }
