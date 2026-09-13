@@ -104,7 +104,7 @@ export async function POST(
     })
     console.log('[INVITE CREATED]', { id: invite.id, token: invite.token, email: normalizedEmail, workspaceId })
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
     const inviteUrl = `${appUrl}/invite/${token}`
     console.log('[INVITE EMAIL URL]', inviteUrl)
     await sendEmail({
