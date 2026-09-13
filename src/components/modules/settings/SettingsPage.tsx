@@ -62,10 +62,13 @@ export default function SettingsPage({ workspaceId, currentUserId, currentUserRo
 
   const loadMembers = useCallback(async () => {
     setLoading(true);
+    console.log('[SettingsPage] fetching members for workspaceId:', workspaceId);
     const [membersRes, invitesRes] = await Promise.all([
       api.workspaces.members(workspaceId),
       canManage ? api.invitations.list(workspaceId) : Promise.resolve({ success: false, error: '' }),
     ]);
+    console.log('[SettingsPage] membersRes:', membersRes);
+    console.log('[SettingsPage] invitesRes:', invitesRes);
     if (membersRes.success) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setMembers((membersRes.data as any).members ?? []);

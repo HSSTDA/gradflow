@@ -28,8 +28,10 @@ export async function GET(
     })
 
     return NextResponse.json({ success: true, data: { invites } })
-  } catch {
-    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
+  } catch (err: unknown) {
+    const e = err as { message?: string; code?: string; meta?: unknown }
+    console.error('Invitations GET error:', e.message, e.code, e.meta)
+    return NextResponse.json({ success: false, error: e.message || 'Internal server error' }, { status: 500 })
   }
 }
 
@@ -125,7 +127,9 @@ export async function POST(
       { success: true, data: { invite: { id: invite.id, email: invite.email, role: invite.role, expiresAt: invite.expiresAt } } },
       { status: 201 }
     )
-  } catch {
-    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
+  } catch (err: unknown) {
+    const e = err as { message?: string; code?: string; meta?: unknown }
+    console.error('Invitation error:', e.message, e.code, e.meta)
+    return NextResponse.json({ success: false, error: e.message || 'Internal server error' }, { status: 500 })
   }
 }
