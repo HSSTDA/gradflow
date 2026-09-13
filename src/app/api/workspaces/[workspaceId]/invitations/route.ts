@@ -43,11 +43,23 @@ export async function POST(
 ) {
   try {
     const authToken = req.headers.get('authorization')?.split(' ')[1]
-    if (!authToken) return NextResponse.json({ success: false, error: 'No token' }, { status: 401 })
-    let userId: string
-    try { userId = verifyToken(authToken).userId } catch {
-      return NextResponse.json({ success: false, error: 'Invalid or expired token' }, { status: 401 })
+    console.log('[INVITE POST] auth header present:', !!authToken)
+
+    if (!authToken) {
+      return NextResponse.json({ success: false, error: 'No token' }, { status: 401 })
     }
+
+    let userId: string
+    try {
+      const decoded = verifyToken(authToken)
+      userId = decoded.userId
+      console.log('[INVITE POST] userId:', userId)
+    } catch (authErr: unknown) {
+      const e = authErr as { message?: string }
+      console.error('[INVITE POST] auth failed:', e.message)
+      return NextResponse.json({ success: false, error: 'Auth failed: ' + e.message }, { status: 401 })
+    }
+
     const { workspaceId } = await params
 
     const requester = await prisma.workspaceMember.findUnique({
@@ -89,12 +101,14 @@ export async function POST(
       select: { name: true },
     })
 
-    const token = randomUUID()
+    console.log('[INVITE POST] creating invite for:', normalizedEmail, 'workspace:', workspaceId)
+
+    const inviteToken = randomUUID()
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
     const invite = await prisma.workspaceInvite.create({
       data: {
-        token,
+        token: inviteToken,
         email: normalizedEmail,
         workspaceId,
         role: role === 'ADMIN' ? 'ADMIN' : 'MEMBER',
@@ -102,11 +116,12 @@ export async function POST(
         expiresAt,
       },
     })
-    console.log('[INVITE CREATED]', { id: invite.id, token: invite.token, email: normalizedEmail, workspaceId })
+    console.log('[INVITE POST] saved:', invite.id, invite.token)
 
     const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    const inviteUrl = `${appUrl}/invite/${token}`
-    console.log('[INVITE EMAIL URL]', inviteUrl)
+    const inviteUrl = `${appUrl}/invite/${inviteToken}`
+    console.log('[INVITE POST] invite URL:', inviteUrl)
+
     await sendEmail({
       to: normalizedEmail,
       subject: `You've been invited to join ${workspace?.name} on GradFlow`,
@@ -137,7 +152,11 @@ export async function POST(
     )
   } catch (err: unknown) {
     const e = err as { message?: string; code?: string; meta?: unknown }
-    console.error('Invitation error:', e.message, e.code, e.meta)
-    return NextResponse.json({ success: false, error: e.message || 'Internal server error' }, { status: 500 })
+    console.error('[INVITE POST] unexpected error:', e.message, e.code, e.meta)
+    return NextResponse.json({
+      success: false,
+      error: e.message || 'Internal server error',
+      code: e.code,
+    }, { status: 500 })
   }
 }
