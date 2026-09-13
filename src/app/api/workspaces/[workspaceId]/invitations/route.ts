@@ -44,6 +44,8 @@ export async function POST(
   try {
     const authToken = req.headers.get('authorization')?.split(' ')[1]
     console.log('[INVITE POST] auth header present:', !!authToken)
+    console.log('[INVITE POST] token prefix:', authToken?.slice(0, 20))
+    console.log('[INVITE POST] token length:', authToken?.length)
 
     if (!authToken) {
       return NextResponse.json({ success: false, error: 'No token' }, { status: 401 })
