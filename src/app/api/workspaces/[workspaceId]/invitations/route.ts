@@ -11,7 +11,9 @@ export async function GET(
   try {
     const authToken = req.headers.get('authorization')?.split(' ')[1]
     if (!authToken) return NextResponse.json({ success: false, error: 'No token' }, { status: 401 })
-    verifyToken(authToken)
+    try { verifyToken(authToken) } catch {
+      return NextResponse.json({ success: false, error: 'Invalid or expired token' }, { status: 401 })
+    }
     const { workspaceId } = await params
 
     const invites = await prisma.workspaceInvite.findMany({
@@ -42,7 +44,10 @@ export async function POST(
   try {
     const authToken = req.headers.get('authorization')?.split(' ')[1]
     if (!authToken) return NextResponse.json({ success: false, error: 'No token' }, { status: 401 })
-    const { userId } = verifyToken(authToken)
+    let userId: string
+    try { userId = verifyToken(authToken).userId } catch {
+      return NextResponse.json({ success: false, error: 'Invalid or expired token' }, { status: 401 })
+    }
     const { workspaceId } = await params
 
     const requester = await prisma.workspaceMember.findUnique({

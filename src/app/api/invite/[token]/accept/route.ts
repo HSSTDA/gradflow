@@ -7,15 +7,23 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> }
 ) {
   try {
-    const authToken = req.headers.get('authorization')?.split(' ')[1]
-    if (!authToken) return NextResponse.json({ success: false, error: 'No token' }, { status: 401 })
-    const { userId, email: userEmail } = verifyToken(authToken)
-    const { token } = await params
+    // inviteToken = UUID from the URL path  (/invite/[token])
+    const { token: inviteToken } = await params
+    console.log('[accept POST] inviteToken from URL:', inviteToken)
+
+    // jwt = the user's JWT from the Authorization header (set after login/signup)
+    const jwt = req.headers.get('authorization')?.split(' ')[1]
+    if (!jwt) return NextResponse.json({ success: false, error: 'No token' }, { status: 401 })
+    const { userId, email: userEmail } = verifyToken(jwt)
+    console.log('[accept POST] authenticated userId:', userId, 'email:', userEmail)
 
     const invite = await prisma.workspaceInvite.findUnique({
-      where: { token },
+      where: { token: inviteToken },
       include: { workspace: { select: { id: true, name: true, slug: true } } },
     })
+    console.log('[accept POST] invite lookup result:', invite
+      ? { id: invite.id, email: invite.email, usedAt: invite.usedAt }
+      : null)
 
     if (!invite) {
       return NextResponse.json({ success: false, error: 'Invitation not found' }, { status: 404 })
@@ -38,7 +46,7 @@ export async function POST(
     })
 
     if (alreadyMember) {
-      await prisma.workspaceInvite.update({ where: { token }, data: { usedAt: new Date() } })
+      await prisma.workspaceInvite.update({ where: { token: inviteToken }, data: { usedAt: new Date() } })
       return NextResponse.json({ success: true, data: { workspace: invite.workspace, role: alreadyMember.role } })
     }
 
@@ -46,14 +54,16 @@ export async function POST(
       prisma.workspaceMember.create({
         data: { workspaceId: invite.workspaceId, userId, role: invite.role },
       }),
-      prisma.workspaceInvite.update({ where: { token }, data: { usedAt: new Date() } }),
+      prisma.workspaceInvite.update({ where: { token: inviteToken }, data: { usedAt: new Date() } }),
     ])
 
     return NextResponse.json(
       { success: true, data: { workspace: invite.workspace, role: member.role } },
       { status: 201 }
     )
-  } catch {
-    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 })
+  } catch (err: unknown) {
+    const e = err as { message?: string }
+    console.error('[accept POST] error:', e.message)
+    return NextResponse.json({ success: false, error: e.message || 'Internal server error' }, { status: 500 })
   }
 }
