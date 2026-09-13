@@ -34,8 +34,10 @@ export default function InvitePage() {
 
   useEffect(() => {
     async function load() {
+      console.log('[InvitePage] token from params:', token)
       const res = await fetch(`/api/invite/${token}`)
       const json = await res.json()
+      console.log('[InvitePage] API response:', json)
       if (!json.success) {
         setInviteError(json.error)
       } else {

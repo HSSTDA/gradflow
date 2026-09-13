@@ -86,6 +86,7 @@ export async function POST(
 
     const token = randomUUID()
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    console.log('[invite POST] generated token:', token)
 
     const invite = await prisma.workspaceInvite.create({
       data: {
@@ -97,8 +98,11 @@ export async function POST(
         expiresAt,
       },
     })
+    console.log('[invite POST] saved to DB — invite id:', invite.id, 'token:', invite.token)
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const inviteUrl = `${appUrl}/invite/${token}`
+    console.log('[invite POST] sending email to:', normalizedEmail, 'url:', inviteUrl)
     await sendEmail({
       to: normalizedEmail,
       subject: `You've been invited to join ${workspace?.name} on GradFlow`,
@@ -113,7 +117,7 @@ export async function POST(
             <p style="color:#78716C;font-size:14px;margin:0 0 24px;">
               <strong>${requester.user.name}</strong> invited you to join <strong>${workspace?.name}</strong> on GradFlow.
             </p>
-            <a href="${appUrl}/invite/${token}"
+            <a href="${inviteUrl}"
               style="display:block;background:#D4500A;color:white;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:700;font-size:14px;text-align:center;margin-bottom:20px;">
               Accept Invitation
             </a>
