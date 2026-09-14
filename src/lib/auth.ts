@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'gradflow-secret'
+const JWT_SECRET = (process.env.JWT_SECRET || 'gradflow-super-secret-2025').trim()
 
 export const signToken = (userId: string, email: string) =>
   jwt.sign(
