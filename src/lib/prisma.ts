@@ -11,11 +11,14 @@ function createPrismaClient() {
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false },
-    max: 10,
-    min: 2,
-    idleTimeoutMillis: 30000,
+    // DATABASE_URL must point at Supabase's transaction-mode pooler (port 6543).
+    // Each Vercel serverless instance gets its own Pool, so this stays small —
+    // the pooler multiplexes many of these onto a shared set of backend connections.
+    max: 3,
+    min: 0,
+    idleTimeoutMillis: 10000,
     connectionTimeoutMillis: 10000,
-    allowExitOnIdle: false,
+    allowExitOnIdle: true,
   })
   const adapter = new PrismaPg(pool)
   return new PrismaClient({ adapter })
