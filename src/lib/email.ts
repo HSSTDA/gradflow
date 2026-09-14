@@ -11,7 +11,7 @@ interface SendEmailOptions {
 export async function sendEmail({ to, subject, html }: SendEmailOptions) {
   try {
     const { data, error } = await resend.emails.send({
-      from: 'GradFlow <onboarding@resend.dev>',
+      from: 'GradFlow <noreply@gradflow.online>',
       to,
       subject,
       html,
