@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getToken } from '@/lib/getToken'
 import { randomUUID } from 'crypto'
 import { verifyToken } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
@@ -9,7 +10,7 @@ export async function GET(
   { params }: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
-    const authToken = req.headers.get('authorization')?.split(' ')[1]
+    const authToken = getToken(req)
     if (!authToken) return NextResponse.json({ success: false, error: 'No token' }, { status: 401 })
     try { verifyToken(authToken) } catch {
       return NextResponse.json({ success: false, error: 'Invalid or expired token' }, { status: 401 })
@@ -42,7 +43,7 @@ export async function POST(
   { params }: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
-    const authToken = req.headers.get('authorization')?.split(' ')[1]
+    const authToken = getToken(req)
     console.log('[INVITE POST] auth header present:', !!authToken)
     console.log('[INVITE POST] token prefix:', authToken?.slice(0, 20))
     console.log('[INVITE POST] token length:', authToken?.length)

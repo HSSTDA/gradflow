@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { cookies } from 'next/headers'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 import { signToken } from '@/lib/auth'
@@ -28,6 +29,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Invalid credentials' }, { status: 401 })
 
     const token = signToken(user.id, user.email)
+    const cookieStore = await cookies()
+    cookieStore.set('gradflow_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60,
+      path: '/',
+    })
     return NextResponse.json({
       success: true,
       data: {

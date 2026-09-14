@@ -79,6 +79,7 @@ export const useAuthStore = create<AuthStore>()(
 
       logout: () => {
         localStorage.removeItem('gradflow_token')
+        fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
         set({ user: null, token: null, currentWorkspace: null, workspaces: [] })
       },
 

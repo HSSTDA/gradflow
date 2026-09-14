@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getToken } from '@/lib/getToken'
 import { verifyToken } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { validate } from '@/lib/validate'
 
 const getUser = (req: NextRequest) => {
-  const token = req.headers.get('authorization')?.split(' ')[1]
+  const token = getToken(req)
   if (!token) throw new Error('No token')
   return verifyToken(token)
 }

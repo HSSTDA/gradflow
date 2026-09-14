@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getToken } from '@/lib/getToken'
 import { verifyToken } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
@@ -12,7 +13,7 @@ export async function POST(
     console.log('[accept POST] inviteToken from URL:', inviteToken)
 
     // jwt = the user's JWT from the Authorization header (set after login/signup)
-    const jwt = req.headers.get('authorization')?.split(' ')[1]
+    const jwt = getToken(req)
     if (!jwt) return NextResponse.json({ success: false, error: 'No token' }, { status: 401 })
     const { userId, email: userEmail } = verifyToken(jwt)
     console.log('[accept POST] authenticated userId:', userId, 'email:', userEmail)

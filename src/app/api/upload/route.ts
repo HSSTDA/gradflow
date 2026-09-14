@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getToken } from '@/lib/getToken'
 import { verifyToken } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { getSupabaseAdmin } from '@/lib/supabase'
@@ -14,7 +15,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing file or workspaceId' }, { status: 400 })
     }
 
-    const token = req.headers.get('authorization')?.split(' ')[1]
+    const token = getToken(req)
     if (!token) return NextResponse.json({ success: false, error: 'No token' }, { status: 401 })
 
     const { userId } = verifyToken(token)

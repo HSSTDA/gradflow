@@ -11,6 +11,7 @@ async function apiFetch<T>(
 
     const res = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
         ...(token && { Authorization: `Bearer ${token}` }),

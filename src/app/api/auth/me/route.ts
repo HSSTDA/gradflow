@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getToken } from '@/lib/getToken'
 import { verifyToken } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 export async function GET(req: NextRequest) {
   try {
-    const authHeader = req.headers.get('authorization')
-    if (!authHeader?.startsWith('Bearer '))
+    const token = getToken(req)
+    if (!token)
       return NextResponse.json({ success: false, error: 'No token' }, { status: 401 })
 
-    const token = authHeader.split(' ')[1]
     const { userId } = verifyToken(token)
 
     const user = await prisma.user.findUnique({
